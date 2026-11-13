@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Message } from "@earendil-works/pi-ai";
 import { toAnthropic } from "../src/transcript.ts";
 
-test("tool calls and results become Anthropic blocks; thinking is dropped", () => {
+test("tool calls and results become Anthropic blocks; thinking and aborted replies are dropped", () => {
 	const messages = [
 		{ role: "user", content: "read a.txt", timestamp: 0 },
 		{
@@ -15,6 +15,8 @@ test("tool calls and results become Anthropic blocks; thinking is dropped", () =
 		},
 		{ role: "toolResult", toolCallId: "t1", toolName: "read", isError: false, content: [{ type: "text", text: "A" }] },
 		{ role: "user", content: "thanks", timestamp: 0 },
+		{ role: "assistant", stopReason: "aborted", content: [{ type: "toolCall", id: "t2", name: "read", arguments: {} }] },
+		{ role: "toolResult", toolCallId: "t2", toolName: "read", isError: true, content: [{ type: "text", text: "aborted" }] },
 	] as unknown as Message[];
 	assert.deepEqual(toAnthropic(messages).messages, [
 		{ role: "user", content: [{ type: "text", text: "read a.txt" }] },

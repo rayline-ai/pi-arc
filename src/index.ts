@@ -36,7 +36,8 @@ export default function (pi: ExtensionAPI) {
 			input: ["text", "image"],
 			// Rayline bills these turns; Pi shows them at zero.
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 1_000_000,
+			// Conservative: Pi compacts against this, and it cannot see the real model's limits here.
+			contextWindow: 200_000,
 			maxTokens: 32_000,
 		})),
 	});

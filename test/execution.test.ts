@@ -25,6 +25,7 @@ test("capacity is an upper bound from bytes, template margin and the reply", () 
 
 const transcript = (texts: string[]): Transcript => ({
 	system: "",
+	thinkingBytes: 0,
 	messages: texts.map((text, i) => ({ role: i % 2 ? "assistant" : "user", content: [{ type: "text", text }] })),
 	assistants: new Map(
 		texts.flatMap((_, i) => (i % 2 ? [[i, { provider: "local", model: "glm" }]] : [])) as never,

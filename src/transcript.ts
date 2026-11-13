@@ -2,7 +2,7 @@
  * Pi's conversation as an Anthropic Messages body, the format ARC reads.
  */
 
-import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import { type AssistantMessage, getCurrentSystemPrompt, type Message } from "@earendil-works/pi-ai";
 
 type Block = Record<string, unknown>;
 
@@ -13,6 +13,8 @@ export interface AnthropicMessage {
 
 export interface Transcript {
 	system: string;
+	/** UTF-8 bytes of the thinking Pi replays to the model that wrote it: not sent to ARC, but part of a local prompt. */
+	thinkingBytes: number;
 	messages: AnthropicMessage[];
 	/** Index in `messages` → the Pi assistant message it came from, to say which model wrote it. */
 	assistants: Map<number, AssistantMessage>;
@@ -31,12 +33,15 @@ function userBlocks(content: UserContent): Block[] {
 
 /**
  * Thinking blocks are left out: their signatures belong to the model that
- * wrote them, and ARC reads the visible conversation.
+ * wrote them, and ARC reads the visible conversation. Failed or aborted
+ * replies are left out with their tool results, as Pi leaves them out of
+ * the next request.
  */
 export function toAnthropic(messages: readonly Message[]): Transcript {
-	const system: string[] = [];
 	const out: AnthropicMessage[] = [];
 	const assistants = new Map<number, AssistantMessage>();
+	const dropped = new Set<string>();
+	let thinkingBytes = 0;
 	const push = (role: AnthropicMessage["role"], blocks: Block[]) => {
 		if (blocks.length === 0) return false;
 		const last = out.at(-1);
@@ -48,17 +53,13 @@ export function toAnthropic(messages: readonly Message[]): Transcript {
 
 	for (const message of messages) {
 		switch (message.role) {
-			case "system": {
-				// Pi's own prompt arrives as named sections.
-				const sections = (message as { sections?: Record<string, string | null> }).sections ?? {};
-				system.push(...userBlocks(message.content as UserContent).map((block) => String(block.text ?? "")));
-				system.push(...Object.values(sections).filter((section): section is string => !!section));
+			case "system":
 				break;
-			}
 			case "user":
 				push("user", userBlocks(message.content));
 				break;
 			case "toolResult":
+				if (dropped.has(message.toolCallId)) break;
 				push("user", [
 					{
 						type: "tool_result",
@@ -69,6 +70,13 @@ export function toAnthropic(messages: readonly Message[]): Transcript {
 				]);
 				break;
 			case "assistant": {
+				if (message.stopReason === "error" || message.stopReason === "aborted") {
+					for (const block of message.content) if (block.type === "toolCall") dropped.add(block.id);
+					break;
+				}
+				for (const block of message.content) {
+					if (block.type === "thinking") thinkingBytes += Buffer.byteLength(block.thinking ?? "");
+				}
 				const blocks = message.content.flatMap((block): Block[] => {
 					if (block.type === "text") return block.text ? [{ type: "text", text: block.text }] : [];
 					if (block.type === "toolCall") return [{ type: "tool_use", id: block.id, name: block.name, input: block.arguments }];
@@ -79,5 +87,5 @@ export function toAnthropic(messages: readonly Message[]): Transcript {
 			}
 		}
 	}
-	return { system: system.filter(Boolean).join("\n\n"), messages: out, assistants };
+	return { system: getCurrentSystemPrompt(messages), thinkingBytes, messages: out, assistants };
 }

@@ -30,28 +30,32 @@ Every value below is what `raydock hybrid` sends.
 
 | Field | Value |
 |---|---|
-| `turn` | `id` from the session and the last message, `attempt` 1, `epoch` = sha256 of the first message |
+| `turn` | `id` from the session and the last message, `epoch` = sha256 of the first message. `attempt` 1; on a re-ask after an overloaded provider, `attempt` 2, `reconsult` `veto` and `retry_of` the replaced route |
 | `event.kind` | `task_start`, `user_message`, `tool_result` or `compaction`, with `basis` `explicit_client` |
 | `history` | For each assistant message, the action of the model that wrote it |
 | `last_served` | The action, worker and message index of the model that answered last |
 | `targets` | One per configured model not just reported overloaded: `action_id`, `worker`, `placement` (`local`/`cloud`), `cache: null`, and for a local model a `capacity` fact |
 | `hold`, `expect` | `null` |
 
-**Action ID.** `sha256({"control_id":"628d…8ad0","model":"<worker>"})`, where
-the control is the thinking-control registry's `default` control and the
-worker is the ARC model ID without its vendor (`glm-5.3-flash`). This is how
-`raydock hybrid` derives its actions.
+**Action ID.** ARC names each choice it can make (a model with a reasoning
+setting) by an action ID. `raydock hybrid` derives it as
+`sha256({"control_id":"628d…8ad0","model":"<worker>"})`, where the control is
+the `default` entry of Rayline's thinking-control registry (the model's own
+reasoning) and the worker is the ARC model ID without its vendor
+(`glm-5.3-flash`). The extension does the same.
 
 **Capacity.** `required = ceil(prompt bytes × 1.05) + 512 + reply allowance`,
-against the Pi model's `contextWindow`. The reply allowance is the model's
-`maxTokens`, at most 32000. With an image in the conversation the bound is
+against the Pi model's `contextWindow`. Prompt bytes include the thinking Pi
+replays to the model that wrote it. The reply allowance is the model's
+`maxTokens`, at most 32000 and at most a quarter of the window (at least 1024). With an image in the conversation the bound is
 marked `caller_estimated`, which ARC does not count as a fit.
 
 ## Routes response
 
 | Field | Use |
 |---|---|
-| `routing.execution.status` | Must be `applied`, or the turn fails |
+| `routing.execution` | Must be `applied` for this `turn.id`, or the turn fails |
+| `routing.policy` | Must be `applied` with the `prefer-local` preset, or the turn fails |
 | `presets.swift.identity.action_id` | The chosen action, mapped back to the configured model. An action that was not offered fails the turn |
 | `route_id`, `usage.encoded_input_tokens` | Shown in `/rayline` |
 

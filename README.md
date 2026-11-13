@@ -1,7 +1,8 @@
 # pi-rayline
 
-Rayline ARC routing for [Pi](https://pi.dev), with the settings
-`raydock hybrid` uses. Select one model, `rayline/arc`. On each turn ARC picks
+Rayline ARC routing for [Pi](https://pi.dev), with the same settings as
+[`raydock hybrid`](https://docs.rayline.ai/raydock), Rayline's local + cloud
+gateway. Select one model, `rayline/arc`. On each turn ARC picks
 the model: the one you run yourself when it can do the job and the
 conversation fits, a cloud model otherwise. Pi runs the turn itself, so the
 footer, `/session` costs and context limits show the model that really
@@ -53,7 +54,7 @@ ID to the Pi model that runs it:
 | Field | Meaning |
 |---|---|
 | `local` | Models you run yourself. Priced at zero and preferred when ARC expects them to do the job |
-| `cloud` | Cloud models. `rayline/<id>` runs through Rayline with your Rayline key; `anthropic/...`, `openai/...` use your own provider key in Pi |
+| `cloud` | Cloud models. `rayline/<id>` runs through Rayline with your Rayline key (`<id>` is Rayline's model name, e.g. `claude-opus-5-5` or `openai/gpt-6-luna`); `anthropic/...`, `openai/...` use your own provider key in Pi |
 | `fallback` | Pi model for a first turn ARC cannot route |
 | `url` | Routes API URL. Default `https://api.rayline.ai/v1/routes` |
 | `timeout_ms` | Lookup timeout. Default 8000 |
@@ -102,8 +103,10 @@ from Pi to your provider. Lookups are billed per token ARC reads, take about
 
 - ARC reads the whole conversation on every lookup, so lookups cost more as a
   session grows.
-- ARC's per-turn steering is not applied: every model runs with its default
-  reasoning, which is what ARC is told.
+- ARC is offered each model with its default reasoning and no per-turn
+  steering, but Pi runs every turn at its `medium` thinking level.
+- Models run through Rayline are declared to Pi with a 200k context window,
+  so Pi compacts earlier than a 1M model needs.
 - The local fit check is an upper bound from the prompt's bytes, as in
   `raydock hybrid` without a tokenizer, so a local model is handed off early
   rather than late.

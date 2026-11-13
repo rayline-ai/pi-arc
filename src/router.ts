@@ -6,13 +6,16 @@
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
 import { type Config, type Target, targetsOf } from "./config.ts";
-import { ARC_MODEL, actionIdOf, capacity, executionContext, PRESET, routing } from "./execution.ts";
+import { ARC_MODEL, actionIdOf, capacity, executionContext, POLICY, PRESET, replyAllowance, routing } from "./execution.ts";
 import { type RouteRequest, RoutesError, requestRoute, sha256 } from "./routes.ts";
 import { toAnthropic } from "./transcript.ts";
 
-/** Stored by Pi on the session branch: identifies the conversation's start, to notice compaction. */
+/** Stored by Pi on the session branch. */
 export interface RouterState {
+	/** Identifies the conversation's start, to notice compaction. */
 	head: string;
+	/** The last route, which a same-turn re-ask refers to. */
+	route?: string;
 }
 
 type Request = ModelRouteRequest<RouterState>;
@@ -22,7 +25,7 @@ type Served = { model: Model<any>; thinkingLevel?: Route["thinkingLevel"] };
 /** The level Pi runs every action at: the default control leaves reasoning to the model. */
 const THINKING = "medium";
 /** A failed request whose provider is busy, worth asking ARC again without it. */
-const OVERLOADED = /\b(429|5\d\d)\b|overload|rate.?limit|capacity|unavailable/i;
+const OVERLOADED = /\b(429|500|502|503|504|529)\b|overload|rate.?limit|capacity|unavailable/i;
 
 export interface Stats {
 	lookups: number;
@@ -74,13 +77,14 @@ export function createRouter(config: Config, deps: RouterDeps) {
 		const state = request.state?.head === head ? request.state : { head };
 
 		// Tool follow-ups stay on the model that started the task, and keep its prompt cache.
+		// After compaction (the conversation's start changed), ARC chooses again.
 		if (reason === "continuation" && previous && !rewritten) {
 			status("route: kept");
 			return keep(previous, state);
 		}
 		// A retry stays on the failed model unless its provider is overloaded; then ARC chooses without it.
 		let skip: Target | undefined;
-		if (reason === "retry" && failed) {
+		if (reason === "retry" && failed && !rewritten) {
 			if (!OVERLOADED.test(failed.message.errorMessage ?? "")) {
 				status("route: retry");
 				return keep(failed, state);
@@ -94,13 +98,14 @@ export function createRouter(config: Config, deps: RouterDeps) {
 			if (!apiKey) throw new Error('Rayline: no API key. Set RAYLINE_API_KEY or add "rayline" to auth.json');
 			const system = transcript.system || ctx.getSystemPrompt();
 			const tools = deps.tools();
-			const promptBytes = Buffer.byteLength(JSON.stringify({ system, messages: transcript.messages, tools }, null, 4));
+			const promptBytes =
+				Buffer.byteLength(JSON.stringify({ system, messages: transcript.messages, tools }, null, 4)) + transcript.thinkingBytes;
 			const images = transcript.messages.some((message) => message.content.some((block) => block.type === "image"));
 			const offered = targets
 				.filter((target) => target !== skip && find(ctx, target.pi))
 				.map((target) => {
 					const model = find(ctx, target.pi)!;
-					const window = { window: model.contextWindow, output: Math.min(32_000, model.maxTokens) };
+					const window = { window: model.contextWindow, output: replyAllowance(model.contextWindow, model.maxTokens) };
 					return { target, capacity: target.placement === "local" ? capacity(promptBytes, window, images) : null };
 				});
 			const previousTarget = previous && targetOf(previous.model.provider, previous.model.id);
@@ -111,6 +116,7 @@ export function createRouter(config: Config, deps: RouterDeps) {
 				rewritten,
 				arcOf: (provider, id) => targetOf(provider, id)?.arc,
 				lastServed: previousTarget?.arc,
+				reconsult: skip && request.state?.route ? { retryOf: request.state.route } : undefined,
 				targets: offered,
 			});
 
@@ -131,8 +137,13 @@ export function createRouter(config: Config, deps: RouterDeps) {
 					signal: request.signal,
 				},
 			);
-			if (response.routing?.execution?.status !== "applied") {
+			// Like raydock hybrid, accept a route only if ARC applied this context and the prefer-local policy.
+			const echo = response.routing as { execution?: { status?: string; turn?: { id?: string } }; policy?: { status?: string; preset?: string } } | undefined;
+			if (echo?.execution?.status !== "applied" || echo.execution.turn?.id !== execution.turn.id) {
 				throw new Error("Rayline: ARC did not apply the execution context");
+			}
+			if (echo.policy?.status !== "applied" || echo.policy.preset !== POLICY.preset) {
+				throw new Error("Rayline: ARC did not apply the prefer-local policy");
 			}
 			const chosen = response.presets?.[PRESET]?.identity?.action_id;
 			const target = offered.find(({ target }) => actionIdOf(target.arc) === chosen)?.target;
@@ -145,7 +156,7 @@ export function createRouter(config: Config, deps: RouterDeps) {
 			stats.elapsedMs += ms;
 			stats.last = `${response.route_id}: ${target.pi} in ${ms} ms`;
 			status(`route: ${ms} ms`);
-			return { model, thinkingLevel: THINKING, state };
+			return { model, thinkingLevel: THINKING, state: { head, ...(response.route_id && { route: response.route_id }) } };
 		} catch (error) {
 			if (request.signal?.aborted || !recoverable(error)) throw error;
 			const routed = fallback(request, ctx, state, error);

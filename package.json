@@ -5,7 +5,7 @@
   "keywords": ["pi-package", "pi-extension", "rayline", "arc", "router", "virtual-model"],
   "license": "MIT",
   "type": "module",
-  "files": ["src", "examples", "README.md", "CHANGELOG.md", "LICENSE"],
+  "files": ["src", "docs", "examples", "README.md", "CHANGELOG.md", "LICENSE"],
   "pi": {
     "extensions": ["./src/index.ts"]
   },

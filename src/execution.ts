@@ -42,9 +42,12 @@ export function routing(targets: Target[], execution: unknown) {
 export interface LocalWindow {
 	/** The model's context window, in tokens. */
 	window: number;
-	/** The most it may write in one reply. */
+	/** The reply allowance: the model's `maxTokens`, at most a quarter of the window and 32000. */
 	output: number;
 }
+
+export const replyAllowance = (window: number, maxTokens: number) =>
+	Math.min(maxTokens, 32_000, Math.max(1_024, Math.floor(window / 4)));
 
 /**
  * Whether the prompt fits a local model, stated as raydock hybrid states it
@@ -77,6 +80,8 @@ export interface ExecutionInput {
 	arcOf(provider: string, id: string): string | undefined;
 	/** The model that answered last, if it is a target. */
 	lastServed?: string;
+	/** Set when asking again in the same turn because the chosen model's provider was unavailable. */
+	reconsult?: { retryOf: string };
 	/** Offered targets, with the capacity of each local one. */
 	targets: { target: Target; capacity?: ReturnType<typeof capacity> | null }[];
 }
@@ -110,10 +115,10 @@ export function executionContext(input: ExecutionInput) {
 		version: "arc-execution-context.v2",
 		turn: {
 			id: sha256(`${input.sessionId}\0main\0${messages.length}\0${sha256(JSON.stringify(last ?? null))}`),
-			attempt: 1,
+			attempt: input.reconsult ? 2 : 1,
 			epoch: messages.length > 0 ? sha256(JSON.stringify(messages[0])) : "",
-			retry_of: null,
-			reconsult: null,
+			retry_of: input.reconsult?.retryOf ?? null,
+			reconsult: input.reconsult ? "veto" : null,
 		},
 		event: stated,
 		last_served:
