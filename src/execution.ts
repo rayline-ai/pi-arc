@@ -1,5 +1,5 @@
 /**
- * What raydock hybrid tells ARC besides the conversation: where each model
+ * What rayline local tells ARC besides the conversation: where each model
  * runs, whether the prompt fits a local model, and which model wrote each
  * reply (`routing.execution`, version `arc-execution-context.v2`). The
  * `prefer-local` policy needs it to prefer a model you run yourself.
@@ -9,7 +9,7 @@ import type { Target } from "./config.ts";
 import { sha256 } from "./routes.ts";
 import type { Transcript } from "./transcript.ts";
 
-/** raydock hybrid's routing settings. */
+/** rayline local's routing settings. */
 export const ARC_MODEL = "arc-swift-1.0";
 export const PRESET = "swift";
 export const POLICY = { preset: "arc-policy.prefer-local.v1", overrides: { selection: { min_p_pass: 0.5 } } };
@@ -17,7 +17,7 @@ const ZERO = { input: 0, cache_read: 0, cache_write: 0, output: 0 };
 
 /** The thinking-control registry's `default` control: the model's own reasoning, no steering. */
 const DEFAULT_CONTROL = "628d285537ca7cdb52c4bd3433cea7a1ec36005a14dbc67ffa1c40487d7b8ad0";
-/** The longest preamble a served chat template adds, as raydock hybrid assumes. */
+/** The longest preamble a served chat template adds, as rayline local assumes. */
 const TEMPLATE_MARGIN_TOKENS = 512;
 /** Start of the user message Pi writes in place of compacted history. */
 const COMPACTION_PREFIX = "The conversation history before this point was compacted into the following summary:";
@@ -25,11 +25,11 @@ const COMPACTION_PREFIX = "The conversation history before this point was compac
 /** ARC's worker name: the model ID without its vendor, e.g. `glm-5.3-flash`. */
 export const workerOf = (arc: string) => arc.slice(arc.indexOf("/") + 1);
 
-/** ARC's action ID for a model, derived as raydock hybrid derives it. */
+/** ARC's action ID for a model, derived as rayline local derives it. */
 export const actionIdOf = (arc: string) =>
 	sha256(JSON.stringify({ control_id: DEFAULT_CONTROL, model: workerOf(arc) }));
 
-/** `routing` as raydock hybrid sends it: local models free, prefer-local, plus the execution context. */
+/** `routing` as rayline local sends it: local models free, prefer-local, plus the execution context. */
 export function routing(targets: Target[], execution: unknown) {
 	const local = targets.filter((target) => target.placement === "local");
 	return {
@@ -50,7 +50,7 @@ export const replyAllowance = (window: number, maxTokens: number) =>
 	Math.min(maxTokens, 32_000, Math.max(1_024, Math.floor(window / 4)));
 
 /**
- * Whether the prompt fits a local model, stated as raydock hybrid states it
+ * Whether the prompt fits a local model, stated as rayline local states it
  * without a tokenizer: an upper bound from the prompt's UTF-8 bytes (no BPE
  * token is shorter than a byte) plus 5%, a chat-template margin and the reply.
  * prefer-local leaves out a local model whose capacity is unknown. With an

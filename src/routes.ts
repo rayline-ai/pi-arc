@@ -70,7 +70,7 @@ export async function requestRoute(body: RouteRequest, options: RequestOptions):
 		method: "POST",
 		redirect: "error",
 		signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
-		// The same identity headers raydock hybrid sends.
+		// The same identity headers rayline local sends.
 		headers: {
 			"content-type": "application/json",
 			authorization: `Bearer ${options.apiKey}`,

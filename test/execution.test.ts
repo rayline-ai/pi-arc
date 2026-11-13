@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { actionIdOf, capacity, executionContext, workerOf } from "../src/execution.ts";
 import type { Transcript } from "../src/transcript.ts";
 
-test("action IDs match the ones raydock hybrid derives", () => {
+test("action IDs match the ones rayline local derives", () => {
 	assert.equal(workerOf("z-ai/glm-5.3-flash"), "glm-5.3-flash");
 	assert.equal(actionIdOf("z-ai/glm-5.3-flash"), "bd202891c3ed5bf9af5250868da17cb3ad68a05184ec5fa757876880257a5b26");
 	assert.equal(actionIdOf("openai/gpt-6-luna"), "21324c14b079ebff6d402361a26511bf7991107fe920ded73607361c3a1eba44");

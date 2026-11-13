@@ -6,7 +6,7 @@ Two endpoints, both with the Rayline key:
 - `POST /v1/messages` for a cloud model mapped to `rayline/<id>`: Pi's own
   Anthropic client, with that model pinned.
 
-Every value below is what `raydock hybrid` sends.
+Every value below is what `rayline local` sends.
 
 ## Routes request
 
@@ -38,7 +38,7 @@ Every value below is what `raydock hybrid` sends.
 | `hold`, `expect` | `null` |
 
 **Action ID.** ARC names each choice it can make (a model with a reasoning
-setting) by an action ID. `raydock hybrid` derives it as
+setting) by an action ID. `rayline local` derives it as
 `sha256({"control_id":"628d…8ad0","model":"<worker>"})`, where the control is
 the `default` entry of Rayline's thinking-control registry (the model's own
 reasoning) and the worker is the ARC model ID without its vendor
