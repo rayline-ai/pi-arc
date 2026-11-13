@@ -1,4 +1,4 @@
-# How pi-rayline uses the Rayline API
+# How pi-arc uses the Rayline API
 
 Two endpoints, both with the Rayline key:
 

@@ -1,5 +1,5 @@
 {
-  "name": "pi-rayline",
+  "name": "pi-arc",
   "version": "0.1.0",
   "description": "Rayline ARC routing for Pi: one virtual model that picks the right model for each turn",
   "keywords": ["pi-package", "pi-extension", "rayline", "arc", "router", "virtual-model"],

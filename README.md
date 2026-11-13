@@ -1,4 +1,4 @@
-# pi-rayline
+# pi-arc
 
 Rayline ARC routing for [Pi](https://pi.dev), with the same settings as
 [`raydock hybrid`](https://docs.rayline.ai/raydock), Rayline's local + cloud
@@ -18,7 +18,7 @@ you ──▶ Pi ──route()──▶ Rayline ARC ──▶ "your local GLM" o
 ## Install
 
 ```bash
-pi install git:github.com/rayline-ai/pi-rayline
+pi install git:github.com/rayline-ai/pi-arc
 ```
 
 Requires Pi 1.1.0 or later and a Rayline API key
