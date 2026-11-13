@@ -1,0 +1,29 @@
+{
+  "name": "pi-rayline",
+  "version": "0.1.0",
+  "description": "Rayline ARC routing for Pi: one virtual model that picks the right model for each turn",
+  "keywords": ["pi-package", "pi-extension", "rayline", "arc", "router", "virtual-model"],
+  "license": "MIT",
+  "type": "module",
+  "files": ["src", "examples", "README.md", "CHANGELOG.md", "LICENSE"],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
