@@ -1,6 +1,7 @@
 /**
  * `rayline.json` in Pi's agent directory (`~/.pi/agent/rayline.json`), or the
- * file named by RAYLINE_PI_CONFIG.
+ * file named by RAYLINE_PI_CONFIG. Optional: without it, and for any field it
+ * leaves out, the defaults below apply.
  */
 
 import { readFileSync } from "node:fs";
@@ -10,9 +11,9 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 export interface Config {
 	/** Models you run yourself: ARC model ID → Pi model (`provider/id`). Priced at zero and preferred when they can do the job. */
 	local?: Record<string, string>;
-	/** Cloud models: ARC model ID → Pi model. `rayline/<id>` runs it through Rayline with your Rayline key. */
+	/** Cloud models: ARC model ID → Pi model. `rayline/<id>` runs it through Rayline with your Rayline key. Default `DEFAULT_CLOUD`. */
 	cloud?: Record<string, string>;
-	/** Pi model (`provider/id`) for a turn ARC cannot route before any model has answered. */
+	/** Pi model (`provider/id`) for a turn ARC cannot route before any model has answered. Default: the first local model, else Claude Haiku via Rayline. */
 	fallback?: string;
 	/** Routes API URL. Default `https://api.rayline.ai/v1/routes`. */
 	url?: string;
@@ -30,6 +31,14 @@ export interface Target {
 
 export const CONFIG_ENV = "RAYLINE_PI_CONFIG";
 
+/** Cloud models when `cloud` is not set: all run through Rayline, so the Rayline key is the only key needed. */
+export const DEFAULT_CLOUD: Record<string, string> = {
+	"anthropic/claude-opus-5.5": "rayline/claude-opus-5-5",
+	"anthropic/claude-haiku-5.5": "rayline/claude-haiku-5-5",
+	"openai/gpt-6-luna": "rayline/openai/gpt-6-luna",
+};
+const DEFAULT_FALLBACK = "rayline/claude-haiku-5-5";
+
 export function configPath(): string {
 	return process.env[CONFIG_ENV] || join(getAgentDir(), "rayline.json");
 }
@@ -41,12 +50,19 @@ export function targetsOf(config: Config): Target[] {
 }
 
 export function loadConfig(path = configPath()): Config {
-	let config: Config;
+	let config: Config = {};
 	try {
 		config = JSON.parse(readFileSync(path, "utf8"));
 	} catch (error) {
-		throw new Error(`Rayline: cannot read ${path} (${(error as Error).message}). See the README for its format.`);
+		// No file at the default path means the defaults; a file named by RAYLINE_PI_CONFIG must exist.
+		const missing = (error as NodeJS.ErrnoException).code === "ENOENT" && !process.env[CONFIG_ENV];
+		if (!missing) throw new Error(`Rayline: cannot read ${path} (${(error as Error).message}). See the README for its format.`);
 	}
+	config = {
+		...config,
+		cloud: config.cloud ?? DEFAULT_CLOUD,
+		fallback: config.fallback ?? Object.values(config.local ?? {})[0] ?? DEFAULT_FALLBACK,
+	};
 	const targets = targetsOf(config);
 	if (targets.length === 0) throw new Error(`Rayline: ${path} lists no local or cloud models`);
 	for (const target of targets) {

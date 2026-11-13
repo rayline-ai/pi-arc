@@ -4,6 +4,7 @@
  * the Rayline CLI uses.
  */
 
+import { existsSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Config, configPath, loadConfig, targetsOf } from "./config.ts";
 import { ROUTES_URL } from "./routes.ts";
@@ -75,7 +76,7 @@ export default function (pi: ExtensionAPI) {
 			const mean = lookups ? Math.round(elapsedMs / lookups) : 0;
 			ctx.ui.notify(
 				[
-					`Rayline ARC, config ${path}`,
+					`Rayline ARC, config ${existsSync(path) ? path : "built-in (no rayline.json)"}`,
 					`${lookups} lookups, ${encodedTokens} encoded tokens billed, ${mean} ms mean, ${fallbacks} fallbacks`,
 					`Last: ${last ?? "none yet"}`,
 				].join("\n"),

@@ -15,62 +15,59 @@ you ──▶ Pi ──route()──▶ Rayline ARC ──▶ "your local GLM" o
          └──▶ cloud model   (through Rayline with your Rayline key, or your own provider key)
 ```
 
-## Install
+## Quick start
 
 ```bash
 pi install git:github.com/rayline-ai/pi-arc
+export RAYLINE_API_KEY=rlk-...   # or add it to auth.json, below
+pi --model rayline/arc
 ```
 
 Requires Pi 1.1.0 or later and a Rayline API key
-([create one](https://docs.rayline.ai/platform/api-keys)).
+([create one](https://docs.rayline.ai/platform/api-keys)). With only the key,
+ARC routes between Claude Opus 5.5, Claude Haiku 5.5 and GPT-6 Luna, all run
+through Rayline, so no other provider key is needed.
 
-## Configure
+The footer shows the model that answered (`arc → <model>`) and how long
+the lookup took (`route: 1206 ms`). `/rayline` shows this session's lookups,
+billed tokens and the last route.
 
-**1. Key.** Set `RAYLINE_API_KEY`, or add it to Pi's `~/.pi/agent/auth.json`
+To keep the key out of your shell, add it to Pi's `~/.pi/agent/auth.json`
 (a `!command` keeps it off disk):
 
 ```json
 { "rayline": { "type": "api_key", "key": "!op read op://Private/Rayline/credential" } }
 ```
 
-**2. Local model** (optional). Serve it with any OpenAI-compatible server
-(vLLM, llama.cpp, ...) and add it to `~/.pi/agent/models.json` as usual. Its
-`contextWindow` there is what ARC checks the prompt against.
+## Add a local model
 
-**3. Models.** Create `~/.pi/agent/rayline.json`. Each entry maps an ARC model
-ID to the Pi model that runs it:
+Serve it with any OpenAI-compatible server (vLLM, llama.cpp, ...) and add it
+to `~/.pi/agent/models.json` as usual. Its `contextWindow` there is what ARC
+checks the prompt against. Then create `~/.pi/agent/rayline.json`, mapping
+its ARC model ID to the Pi model:
 
 ```json
-{
-  "local": { "z-ai/glm-5.3-flash": "local/glm-5.3-flash" },
-  "cloud": {
-    "anthropic/claude-opus-5.5": "rayline/claude-opus-5-5",
-    "anthropic/claude-haiku-5.5": "rayline/claude-haiku-5-5"
-  },
-  "fallback": "local/glm-5.3-flash"
-}
+{ "local": { "z-ai/glm-5.3-flash": "local/glm-5.3-flash" } }
 ```
 
-| Field | Meaning |
-|---|---|
-| `local` | Models you run yourself. Priced at zero and preferred when ARC expects them to do the job |
-| `cloud` | Cloud models. `rayline/<id>` runs through Rayline with your Rayline key (`<id>` is Rayline's model name, e.g. `claude-opus-5-5` or `openai/gpt-6-luna`); `anthropic/...`, `openai/...` use your own provider key in Pi |
-| `fallback` | Pi model for a first turn ARC cannot route |
-| `url` | Routes API URL. Default `https://api.rayline.ai/v1/routes` |
-| `timeout_ms` | Lookup timeout. Default 8000 |
+ARC now prefers the local model when it can do the job and the conversation
+fits, and uses the cloud models otherwise.
 
-[`examples/`](examples) has this setup and a cloud-only one with your own
-provider keys. Set `RAYLINE_PI_CONFIG` to use another file.
+## Configuration
 
-## Use
+`~/.pi/agent/rayline.json` is optional; every field has a default. Each
+model entry maps an ARC model ID to the Pi model that runs it.
 
-```bash
-pi --model rayline/arc
-```
+| Field | Meaning | Default |
+|---|---|---|
+| `local` | Models you run yourself. Priced at zero and preferred when ARC expects them to do the job | none |
+| `cloud` | Cloud models. `rayline/<id>` runs through Rayline with your Rayline key (`<id>` is Rayline's model name, e.g. `claude-opus-5-5` or `openai/gpt-6-luna`); `anthropic/...`, `openai/...` use your own provider key in Pi | Opus 5.5, Haiku 5.5 and GPT-6 Luna via Rayline |
+| `fallback` | Pi model for a first turn ARC cannot route | the first `local` model, else Haiku via Rayline |
+| `url` | Routes API URL | `https://api.rayline.ai/v1/routes` |
+| `timeout_ms` | Lookup timeout | 8000 |
 
-The footer shows the model that answered (`arc → <model>`) and how long
-the lookup took (`route: 1206 ms`). `/rayline` shows this session's lookups,
-billed tokens and the last route.
+[`examples/`](examples) has a local + Rayline setup and a cloud-only one with
+your own provider keys. Set `RAYLINE_PI_CONFIG` to use another file.
 
 ## How it routes
 
