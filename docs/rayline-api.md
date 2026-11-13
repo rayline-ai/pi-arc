@@ -1,47 +1,63 @@
 # How pi-rayline uses the Rayline API
 
-The extension uses one endpoint, the public
-[Routes API](https://docs.rayline.ai/arc/reference/routes), and nothing else.
-All of it is in `src/routes.ts`.
+Two endpoints, both with the Rayline key:
 
-## Request
+- `POST /v1/routes` ([Routes API](https://docs.rayline.ai/arc/reference/routes)) on every lookup, in `src/routes.ts`.
+- `POST /v1/messages` for a cloud model mapped to `rayline/<id>`: Pi's own
+  Anthropic client, with that model pinned.
 
-`POST https://api.rayline.ai/v1/routes`
+Every value below is what `raydock hybrid` sends.
+
+## Routes request
 
 | Header | Value |
 |---|---|
-| `authorization` | `Bearer <Rayline API key>` |
-| `x-conversation-id` | The Pi session ID, the same on every turn |
+| `authorization` | `Bearer <Rayline key>` |
+| `x-conversation-id` | sha256 of the Pi session ID |
+| `x-rayline-branch-id` | sha256 of `main` |
+| `x-rayline-wire-format` | `anthropic.messages.v1` |
 
-The body is an Anthropic Messages request:
-
-| Field | Source |
+| Body field | Value |
 |---|---|
-| `model` | `arc` from `rayline.json` (default `arc-swift-1.0`) |
-| `max_tokens` | `32000`. Required by the format; it does not affect the route |
-| `system` | Pi's system prompt |
-| `messages` | The conversation. Tool calls and results become `tool_use` and `tool_result` blocks; thinking blocks are left out |
-| `tools` | The active tools' names, descriptions and schemas |
-| `routing.models` | The ARC IDs in `models` whose Pi model is in the catalog and whose context window holds the conversation, minus a model whose provider just reported it was overloaded |
-| `routing.prices` | `prices`, as configured |
-| `routing.price_profile` | `price_profile`, as configured |
-| `routing.v_value` | `v_value`, as configured |
+| `model` | `arc-swift-1.0` |
+| `max_tokens` | `32000` (required by the format; no effect on the route) |
+| `system`, `messages`, `tools` | Pi's system prompt, conversation (thinking blocks left out) and active tools |
+| `routing.policy` | `{"preset": "arc-policy.prefer-local.v1", "overrides": {"selection": {"min_p_pass": 0.5}}}` |
+| `routing.prices` | Every `local` model at 0 for all four legs |
+| `routing.execution` | The execution context below |
 
-## Response
+### `routing.execution` (`arc-execution-context.v2`)
+
+| Field | Value |
+|---|---|
+| `turn` | `id` from the session and the last message, `attempt` 1, `epoch` = sha256 of the first message |
+| `event.kind` | `task_start`, `user_message`, `tool_result` or `compaction`, with `basis` `explicit_client` |
+| `history` | For each assistant message, the action of the model that wrote it |
+| `last_served` | The action, worker and message index of the model that answered last |
+| `targets` | One per configured model not just reported overloaded: `action_id`, `worker`, `placement` (`local`/`cloud`), `cache: null`, and for a local model a `capacity` fact |
+| `hold`, `expect` | `null` |
+
+**Action ID.** `sha256({"control_id":"628d…8ad0","model":"<worker>"})`, where
+the control is the thinking-control registry's `default` control and the
+worker is the ARC model ID without its vendor (`glm-5.3-flash`). This is how
+`raydock hybrid` derives its actions.
+
+**Capacity.** `required = ceil(prompt bytes × 1.05) + 512 + reply allowance`,
+against the Pi model's `contextWindow`. The reply allowance is the model's
+`maxTokens`, at most 32000. With an image in the conversation the bound is
+marked `caller_estimated`, which ARC does not count as a fit.
+
+## Routes response
 
 | Field | Use |
 |---|---|
-| `model` | Looked up in `models` to find the Pi model to run. A model not listed there fails the turn |
-| `thinking` | Mapped to Pi's thinking level (see the README) |
-| `route_id` | Shown in `/rayline` |
-| `usage.encoded_input_tokens` | Added to the billed tokens in `/rayline` |
-
-Other fields (`alternatives`, `presets`, `warnings`, the `routing` echo) are
-not used.
+| `routing.execution.status` | Must be `applied`, or the turn fails |
+| `presets.swift.identity.action_id` | The chosen action, mapped back to the configured model. An action that was not offered fails the turn |
+| `route_id`, `usage.encoded_input_tokens` | Shown in `/rayline` |
 
 ## Errors
 
 | Status | Handling |
 |---|---|
 | `429`, `5xx`, `413`, network error, timeout | Fall back to the last model, or `fallback`, with a warning |
-| Any other `4xx` (`401`, `402`, `400 unknown_model`, ...) | Fail the turn with Rayline's message |
+| Any other `4xx` | Fail the turn with Rayline's message |

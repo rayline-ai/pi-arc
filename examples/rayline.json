@@ -1,0 +1,11 @@
+{
+  "local": {
+    "z-ai/glm-5.3-flash": "local/glm-5.3-flash"
+  },
+  "cloud": {
+    "anthropic/claude-opus-5.5": "rayline/claude-opus-5-5",
+    "anthropic/claude-haiku-5.5": "rayline/claude-haiku-5-5",
+    "openai/gpt-6-luna": "rayline/openai/gpt-6-luna"
+  },
+  "fallback": "local/glm-5.3-flash"
+}

@@ -1,11 +1,15 @@
 /**
  * Rayline ARC for Pi: registers `rayline/arc`, a virtual model that asks
- * Rayline's Routes API which of your models should take each turn.
+ * Rayline which of your models should take each turn, with the settings
+ * `raydock hybrid` uses.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type Config, configPath, loadConfig } from "./config.ts";
-import { createRouter } from "./router.ts";
+import { type Config, configPath, loadConfig, targetsOf } from "./config.ts";
+import { ROUTES_URL } from "./routes.ts";
+import { createRouter, type RouterState } from "./router.ts";
+
+const PROVIDER = "rayline";
 
 export default function (pi: ExtensionAPI) {
 	const path = configPath();
@@ -17,20 +21,30 @@ export default function (pi: ExtensionAPI) {
 		configError = error;
 	}
 
-	// The provider holds the Rayline key: the `rayline` entry in auth.json, else RAYLINE_API_KEY.
-	// It serves no models of its own.
-	pi.registerProvider("rayline", {
+	// The `rayline` provider holds the key (auth.json, else RAYLINE_API_KEY) and runs every
+	// `rayline/<id>` model through Rayline's Messages API, pinned to that model.
+	const gateway = config ? targetsOf(config).filter((target) => target.pi.startsWith(`${PROVIDER}/`)) : [];
+	pi.registerProvider(PROVIDER, {
 		name: "Rayline",
-		baseUrl: "https://api.rayline.ai",
+		baseUrl: new URL(config?.url ?? ROUTES_URL).origin,
 		api: "anthropic-messages",
 		apiKey: "$RAYLINE_API_KEY",
-		models: [],
+		models: gateway.map((target) => ({
+			id: target.pi.slice(PROVIDER.length + 1),
+			name: `${target.arc} via Rayline`,
+			reasoning: true,
+			input: ["text", "image"],
+			// Rayline bills these turns; Pi shows them at zero.
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1_000_000,
+			maxTokens: 32_000,
+		})),
 	});
 
 	const router =
 		config &&
 		createRouter(config, {
-			apiKey: (ctx) => ctx.modelRegistry.getApiKeyForProvider("rayline"),
+			apiKey: (ctx) => ctx.modelRegistry.getApiKeyForProvider(PROVIDER),
 			tools: () => {
 				const active = new Set(pi.getActiveTools());
 				return pi
@@ -40,11 +54,11 @@ export default function (pi: ExtensionAPI) {
 			},
 		});
 
-	pi.registerVirtualModel({
-		provider: "rayline",
+	pi.registerVirtualModel<RouterState>({
+		provider: PROVIDER,
 		id: "arc",
 		name: "Rayline ARC",
-		// ARC picks the thinking level with the model.
+		// ARC picks the model; the user's thinking level is not an input.
 		thinkingLevels: ["off"],
 		route(request, ctx) {
 			if (!router) throw configError;
@@ -60,7 +74,7 @@ export default function (pi: ExtensionAPI) {
 			const mean = lookups ? Math.round(elapsedMs / lookups) : 0;
 			ctx.ui.notify(
 				[
-					`Rayline ARC (${config?.arc ?? "arc-swift-1.0"}), config ${path}`,
+					`Rayline ARC, config ${path}`,
 					`${lookups} lookups, ${encodedTokens} encoded tokens billed, ${mean} ms mean, ${fallbacks} fallbacks`,
 					`Last: ${last ?? "none yet"}`,
 				].join("\n"),
