@@ -1,7 +1,7 @@
 /**
  * Rayline ARC for Pi: registers `rayline/arc`, a virtual model that asks
  * Rayline which of your models should take each turn, with the settings
- * `rayline local` uses.
+ * the Rayline CLI uses.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

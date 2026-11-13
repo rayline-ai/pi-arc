@@ -1,7 +1,7 @@
 # pi-arc
 
 Rayline ARC routing for [Pi](https://pi.dev), with the same settings as
-[`rayline local`](https://docs.rayline.ai/rayline-cli), Rayline's local + cloud
+the [Rayline CLI](https://docs.rayline.ai/rayline-cli)'s local + cloud
 gateway. Select one model, `rayline/arc`. On each turn ARC picks
 the model: the one you run yourself when it can do the job and the
 conversation fits, a cloud model otherwise. Pi runs the turn itself, so the
@@ -84,7 +84,7 @@ billed tokens and the last route.
 | ARC unreachable, timeout, 429/5xx/413 | Stays on the last model (or `fallback`) and warns |
 | Bad key, bad config, empty balance | The turn fails with Rayline's error, so you can fix it |
 
-These are `rayline local`'s settings: `arc-swift-1.0`, the
+These are the Rayline CLI's settings: `arc-swift-1.0`, the
 `arc-policy.prefer-local.v1` policy with `min_p_pass` 0.5, local models
 priced at zero, and an execution context that tells ARC where each model runs
 and which one wrote each reply. [docs/rayline-api.md](docs/rayline-api.md)
@@ -108,7 +108,7 @@ from Pi to your provider. Lookups are billed per token ARC reads, take about
 - Models run through Rayline are declared to Pi with a 200k context window,
   so Pi compacts earlier than a 1M model needs.
 - The local fit check is an upper bound from the prompt's bytes, as in
-  `rayline local` without a tokenizer, so a local model is handed off early
+  the Rayline CLI without a tokenizer, so a local model is handed off early
   rather than late.
 
 ## Development

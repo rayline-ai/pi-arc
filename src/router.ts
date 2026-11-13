@@ -137,7 +137,7 @@ export function createRouter(config: Config, deps: RouterDeps) {
 					signal: request.signal,
 				},
 			);
-			// Like rayline local, accept a route only if ARC applied this context and the prefer-local policy.
+			// Like the Rayline CLI, accept a route only if ARC applied this context and the prefer-local policy.
 			const echo = response.routing as { execution?: { status?: string; turn?: { id?: string } }; policy?: { status?: string; preset?: string } } | undefined;
 			if (echo?.execution?.status !== "applied" || echo.execution.turn?.id !== execution.turn.id) {
 				throw new Error("Rayline: ARC did not apply the execution context");
