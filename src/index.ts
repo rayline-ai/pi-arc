@@ -7,6 +7,7 @@
 import { existsSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Config, configPath, loadConfig, targetsOf } from "./config.ts";
+import { localRoutesCache, rayline, type Run } from "./local.ts";
 import { ROUTES_URL } from "./routes.ts";
 import { createRouter, type RouterState } from "./router.ts";
 
@@ -43,10 +44,13 @@ export default function (pi: ExtensionAPI) {
 		})),
 	});
 
+	const run: Run = (command, args, options) => pi.exec(command, args, options);
+	const localRoutes = localRoutesCache(run);
 	const router =
 		config &&
 		createRouter(config, {
 			apiKey: (ctx) => ctx.modelRegistry.getApiKeyForProvider(PROVIDER),
+			localRoutes,
 			tools: () => {
 				const active = new Set(pi.getActiveTools());
 				return pi
@@ -69,15 +73,36 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("rayline", {
-		description: "Show Rayline routing for this session",
-		handler: async (_args, ctx) => {
-			if (!router) return ctx.ui.notify(String(configError), "error");
+		description: "Rayline routing for this session; `/rayline start` or `/rayline stop` the local process for local decisions",
+		getArgumentCompletions: (prefix) =>
+			["start", "stop"].filter((name) => name.startsWith(prefix.trim())).map((name) => ({ value: name, label: name })),
+		handler: async (args, ctx) => {
+			const command = args.trim();
+			if (command === "start" || command === "stop") {
+				ctx.ui.notify(command === "start" ? "Starting the Rayline local process with local decisions…" : "Stopping the Rayline local process…", "info");
+				try {
+					// The first start downloads the ARC release and encoder; later starts take seconds.
+					await rayline(run, command === "start" ? ["start", "--decisions", "local"] : ["stop"], { timeout: 15 * 60_000 });
+					await localRoutes(undefined, true).catch(() => undefined);
+					ctx.ui.notify(command === "start" ? "Rayline local process started: routing decisions run locally." : "Rayline local process stopped.", "info");
+				} catch (error) {
+					ctx.ui.notify((error as Error).message, "error");
+				}
+				return;
+			}
+			if (command) return ctx.ui.notify(`Rayline: unknown command \`/rayline ${command}\`. Use /rayline, /rayline start or /rayline stop.`, "error");
+			if (!router || !config) return ctx.ui.notify(String(configError), "error");
 			const { lookups, encodedTokens, elapsedMs, fallbacks, last } = router.stats;
 			const mean = lookups ? Math.round(elapsedMs / lookups) : 0;
+			const where =
+				config.decisions === "local"
+					? "local decisions (Rayline CLI local process; not metered)"
+					: `hosted decisions, ${encodedTokens} encoded tokens billed`;
 			ctx.ui.notify(
 				[
-					`Rayline ARC, config ${existsSync(path) ? path : "built-in (no rayline.json)"}`,
-					`${lookups} lookups, ${encodedTokens} encoded tokens billed, ${mean} ms mean, ${fallbacks} fallbacks`,
+					`Rayline ARC, ${where}`,
+					`Config ${existsSync(path) ? path : "built-in (no rayline.json)"}`,
+					`${lookups} lookups, ${mean} ms mean${config.decisions === "local" ? "" : `, ${fallbacks} fallbacks`}`,
 					`Last: ${last ?? "none yet"}`,
 				].join("\n"),
 				"info",
