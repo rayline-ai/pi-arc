@@ -10,7 +10,7 @@ Pi runs the turn itself, so the footer, `/session` costs and context
 limits show the model that really answered.
 
 ```
-you ──▶ Pi ──route()──▶ ARC (on your Mac) ──▶ "your local GLM" or "a cloud model you chose"
+you ──▶ Pi ──route()──▶ ARC (local or hosted) ──▶ "your local GLM" or "a cloud model you chose"
          │
          ├──▶ local model   (your server)
          └──▶ cloud model   (through Rayline with your Rayline key, or your own provider key)
@@ -24,9 +24,9 @@ Requires Pi 1.1.0 or later. Install the extension:
 pi install git:github.com/rayline-ai/pi-arc
 ```
 
-Cloud turns through Rayline use your Rayline API key
-([create one](https://docs.rayline.ai/platform/api-keys)), and Pi lists
-`arc` only once the key is set. Run `/login rayline` in Pi, set
+With the default cloud models, cloud turns run through Rayline with your
+Rayline API key ([create one](https://docs.rayline.ai/platform/api-keys)),
+and Pi lists `arc` only once the key is set. Run `/login rayline` in Pi, set
 `RAYLINE_API_KEY`, or add it to Pi's `~/.pi/agent/auth.json` (a `!command`
 keeps it off disk):
 
