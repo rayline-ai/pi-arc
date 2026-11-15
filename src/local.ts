@@ -23,7 +23,9 @@ export function raylineBin(home = homedir()): string {
 	return existsSync(installed) ? installed : "rayline";
 }
 
-export const START_HINT = "run `/rayline start` (or `rayline local start --decisions local`)";
+export const START_HINT =
+	"Local decisions never fall back to hosted. Run /rayline start, or switch to hosted decisions with /rayline setup.";
+export const NOT_RUNNING = `Rayline local isn't running, so ARC can't decide this turn. ${START_HINT}`;
 
 export interface LocalRoutes {
 	url: string;
@@ -61,14 +63,14 @@ export async function findLocalRoutes(run: Run, signal?: AbortSignal): Promise<L
 	} catch {
 		throw new Error("Rayline: `rayline local status --json` did not print JSON. Local decisions need the Rayline CLI 0.5.2 or later.");
 	}
-	if (!status.running) throw new Error(`Rayline: local decisions, but the Rayline local process is not running: ${START_HINT}`);
+	if (!status.running) throw new Error(NOT_RUNNING);
 	if (status.decisions !== "local" || !status.routes?.url || !status.routes.token_file) {
 		throw new Error(
 			`Rayline: the Rayline local process runs with ${status.decisions ?? "hosted"} decisions. Run \`/rayline stop\`, then \`/rayline start\`.`,
 		);
 	}
 	const token = (await readFile(status.routes.token_file, "utf8")).trim();
-	if (!token) throw new Error(`Rayline: ${status.routes.token_file} is empty: ${START_HINT}`);
+	if (!token) throw new Error(`Rayline: ${status.routes.token_file} is empty. ${START_HINT}`);
 	return { url: status.routes.url, token };
 }
 

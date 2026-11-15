@@ -17,7 +17,7 @@ test("reads the URL from rayline local status --json and the token from its file
 });
 
 test("a stopped local process says how to start it", async () => {
-	await assert.rejects(findLocalRoutes(status({ running: false })), /not running: run `\/rayline start`/);
+	await assert.rejects(findLocalRoutes(status({ running: false })), /isn.t running.*Run \/rayline start/);
 });
 
 test("a local process with hosted decisions says to restart it", async () => {

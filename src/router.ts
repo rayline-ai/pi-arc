@@ -6,7 +6,7 @@
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
 import { type Config, type Target, targetsOf } from "./config.ts";
-import { type LocalRoutes, START_HINT } from "./local.ts";
+import { type LocalRoutes, NOT_RUNNING } from "./local.ts";
 import { ARC_MODEL, actionIdOf, capacity, executionContext, POLICY, PRESET, replyAllowance, routing } from "./execution.ts";
 import { type RouteRequest, RoutesError, requestRoute, sha256 } from "./routes.ts";
 import { toAnthropic } from "./transcript.ts";
@@ -33,6 +33,10 @@ export interface Stats {
 	encodedTokens: number;
 	elapsedMs: number;
 	fallbacks: number;
+	/** The first lookup's time: it encodes the whole prompt, so it is slower than later ones. */
+	firstMs?: number;
+	/** Turns ARC gave each Pi model (`provider/id`). */
+	models: Record<string, number>;
 	last?: string;
 }
 
@@ -46,7 +50,7 @@ export interface RouterDeps {
 
 export function createRouter(config: Config, deps: RouterDeps) {
 	const targets = targetsOf(config);
-	const stats: Stats = { lookups: 0, encodedTokens: 0, elapsedMs: 0, fallbacks: 0 };
+	const stats: Stats = { lookups: 0, encodedTokens: 0, elapsedMs: 0, fallbacks: 0, models: {} };
 	const fetchRoute = deps.requestRoute ?? requestRoute;
 	const local = config.decisions === "local";
 
@@ -69,7 +73,7 @@ export function createRouter(config: Config, deps: RouterDeps) {
 			try {
 				return await once(await deps.localRoutes(signal, true));
 			} catch (again) {
-				if (again instanceof TypeError) throw new Error(`Rayline: cannot reach the Rayline local process: ${START_HINT}`);
+				if (again instanceof TypeError) throw new Error(NOT_RUNNING);
 				throw again;
 			}
 		}
@@ -176,12 +180,14 @@ export function createRouter(config: Config, deps: RouterDeps) {
 			stats.lookups += 1;
 			stats.encodedTokens += response.usage?.encoded_input_tokens ?? 0;
 			stats.elapsedMs += ms;
+			stats.firstMs ??= ms;
+			stats.models[target.pi] = (stats.models[target.pi] ?? 0) + 1;
 			stats.last = `${response.route_id}: ${target.pi} in ${ms} ms`;
 			status(local ? `route: local · ${target.arc} · ${ms} ms` : `route: ${ms} ms`);
 			return { model, thinkingLevel: THINKING, state: { head, ...(response.route_id && { route: response.route_id }) } };
 		} catch (error) {
 			// Local decisions never fall back: the turn fails and says how to fix it.
-			if (local) status("route: local unavailable");
+			if (local) status((error as Error).message === NOT_RUNNING ? "route: local, not running" : "route: local, no decision");
 			if (local || request.signal?.aborted || !recoverable(error)) throw error;
 			const routed = fallback(request, ctx, state, error);
 			stats.fallbacks += 1;

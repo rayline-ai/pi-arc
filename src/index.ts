@@ -8,8 +8,9 @@ import { existsSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Config, configPath, loadConfig, targetsOf } from "./config.ts";
 import { localRoutesCache, rayline, type Run } from "./local.ts";
+import { setup } from "./setup.ts";
 import { ROUTES_URL } from "./routes.ts";
-import { createRouter, type RouterState } from "./router.ts";
+import { createRouter, type RouterState, type Stats } from "./router.ts";
 
 const PROVIDER = "rayline";
 
@@ -17,11 +18,16 @@ export default function (pi: ExtensionAPI) {
 	const path = configPath();
 	let config: Config | undefined;
 	let configError: unknown;
-	try {
-		config = loadConfig(path);
-	} catch (error) {
-		configError = error;
-	}
+	const load = () => {
+		try {
+			config = loadConfig(path);
+			configError = undefined;
+		} catch (error) {
+			config = undefined;
+			configError = error;
+		}
+	};
+	load();
 
 	// The `rayline` provider holds the key (auth.json, else RAYLINE_API_KEY) and runs every
 	// `rayline/<id>` model through Rayline's Messages API, pinned to that model.
@@ -46,19 +52,16 @@ export default function (pi: ExtensionAPI) {
 
 	const run: Run = (command, args, options) => pi.exec(command, args, options);
 	const localRoutes = localRoutesCache(run);
-	const router =
-		config &&
-		createRouter(config, {
-			apiKey: (ctx) => ctx.modelRegistry.getApiKeyForProvider(PROVIDER),
-			localRoutes,
-			tools: () => {
-				const active = new Set(pi.getActiveTools());
-				return pi
-					.getAllTools()
-					.filter((tool) => active.has(tool.name))
-					.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters }));
-			},
-		});
+	const tools = () => {
+		const active = new Set(pi.getActiveTools());
+		return pi
+			.getAllTools()
+			.filter((tool) => active.has(tool.name))
+			.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters }));
+	};
+	const makeRouter = () =>
+		config && createRouter(config, { apiKey: (ctx) => ctx.modelRegistry.getApiKeyForProvider(PROVIDER), localRoutes, tools });
+	let router = makeRouter();
 
 	pi.registerVirtualModel<RouterState>({
 		provider: PROVIDER,
@@ -72,41 +75,58 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	const commands = ["setup", "start", "stop"];
 	pi.registerCommand("rayline", {
-		description: "Rayline routing for this session; `/rayline start` or `/rayline stop` the local process for local decisions",
+		description: "Rayline routing for this session; /rayline setup, /rayline start, /rayline stop",
 		getArgumentCompletions: (prefix) =>
-			["start", "stop"].filter((name) => name.startsWith(prefix.trim())).map((name) => ({ value: name, label: name })),
+			commands.filter((name) => name.startsWith(prefix.trim())).map((name) => ({ value: name, label: name })),
 		handler: async (args, ctx) => {
 			const command = args.trim();
-			if (command === "start" || command === "stop") {
-				ctx.ui.notify(command === "start" ? "Starting the Rayline local process with local decisions…" : "Stopping the Rayline local process…", "info");
-				try {
-					// The first start downloads the ARC release and encoder; later starts take seconds.
+			try {
+				if (command === "setup") {
+					return await setup(ctx.ui, {
+						run,
+						path,
+						reload: () => {
+							load();
+							router = makeRouter();
+						},
+					});
+				}
+				if (command === "start" || command === "stop") {
+					ctx.ui.notify(command === "start" ? "Starting local ARC. The first start downloads about 1 GB, once." : "Stopping local ARC…", "info");
 					await rayline(run, command === "start" ? ["start", "--decisions", "local"] : ["stop"], { timeout: 15 * 60_000 });
 					await localRoutes(undefined, true).catch(() => undefined);
-					ctx.ui.notify(command === "start" ? "Rayline local process started: routing decisions run locally." : "Rayline local process stopped.", "info");
-				} catch (error) {
-					ctx.ui.notify((error as Error).message, "error");
+					ctx.ui.setStatus("rayline", command === "start" ? "route: local, ready" : "route: local, not running");
+					return ctx.ui.notify(command === "start" ? "Local ARC ready: routing decisions run locally." : "Local ARC stopped.", "info");
 				}
-				return;
+			} catch (error) {
+				return ctx.ui.notify((error as Error).message, "error");
 			}
-			if (command) return ctx.ui.notify(`Rayline: unknown command \`/rayline ${command}\`. Use /rayline, /rayline start or /rayline stop.`, "error");
+			if (command) return ctx.ui.notify(`Rayline: unknown command /rayline ${command}. Use /rayline, /rayline setup, /rayline start or /rayline stop.`, "error");
 			if (!router || !config) return ctx.ui.notify(String(configError), "error");
-			const { lookups, encodedTokens, elapsedMs, fallbacks, last } = router.stats;
-			const mean = lookups ? Math.round(elapsedMs / lookups) : 0;
-			const where =
-				config.decisions === "local"
-					? "local decisions (Rayline CLI local process; not metered)"
-					: `hosted decisions, ${encodedTokens} encoded tokens billed`;
-			ctx.ui.notify(
-				[
-					`Rayline ARC, ${where}`,
-					`Config ${existsSync(path) ? path : "built-in (no rayline.json)"}`,
-					`${lookups} lookups, ${mean} ms mean${config.decisions === "local" ? "" : `, ${fallbacks} fallbacks`}`,
-					`Last: ${last ?? "none yet"}`,
-				].join("\n"),
-				"info",
-			);
+			ctx.ui.notify(summary(config, router.stats, existsSync(path) ? path : "built-in (no rayline.json)"), "info");
 		},
 	});
+}
+
+/** `/rayline`: where decisions ran, how long they took, and which models took the turns. */
+export function summary(config: Config, stats: Stats, source: string): string {
+	const local = config.decisions === "local";
+	const { lookups, elapsedMs, firstMs, models, last } = stats;
+	const later = lookups > 1 && firstMs !== undefined ? Math.round((elapsedMs - firstMs) / (lookups - 1)) : undefined;
+	const times = !lookups ? "" : later === undefined ? `: ${firstMs} ms` : `: first ${firstMs} ms, then ${later} ms mean`;
+	const used = Object.entries(models)
+		.sort((a, b) => b[1] - a[1])
+		.map(([model, turns]) => `${model} ${turns} ${turns === 1 ? "turn" : "turns"}`);
+	return [
+		local ? "Rayline ARC: local decisions on this Mac (arc-swift-1.0)" : "Rayline ARC: hosted decisions (arc-swift-1.0)",
+		`Config ${source}`,
+		`${lookups} ${lookups === 1 ? "turn" : "turns"} decided${times}`,
+		...(used.length ? [`Models: ${used.join(", ")}`] : []),
+		local
+			? `Hosted decisions this session: 0`
+			: `${stats.encodedTokens} encoded tokens billed, ${stats.fallbacks} fallbacks`,
+		`Last: ${last ?? "none yet"}`,
+	].join("\n");
 }

@@ -58,19 +58,23 @@ fits, and uses the cloud models otherwise.
 With the [Rayline CLI](https://github.com/rayline-ai/rayline-cli) 0.5.2 or
 later on an Apple Silicon Mac, routing decisions run locally: ARC runs in the
 Rayline CLI's local process on your machine, and Pi still runs each turn
-with your own Pi, extensions and models. Run `rayline auth login` once, then
-set `decisions` in `~/.pi/agent/rayline.json`:
+with your own Pi, extensions and models. In Pi:
 
-```json
-{ "decisions": "local" }
+```
+/rayline setup
 ```
 
-and start the local process from Pi with `/rayline start` (it runs
-`rayline local start --decisions local`). The first start downloads the ARC
-release and its encoder; later starts take seconds. The footer shows each
-decision, for example `route: local · z-ai/glm-5.3-flash · 57 ms`, and
-`/rayline` shows the session's lookups and mean decision time.
-`/rayline stop` stops the local process.
+and choose local decisions. Setup checks the Rayline CLI (and shows the
+install command if it is missing), signs you in with `rayline auth login`,
+starts the local process (`rayline local start --decisions local`; the first
+start downloads about 1 GB, once), and saves `"decisions": "local"` in
+`~/.pi/agent/rayline.json`. Then pick `/model rayline/arc`.
+
+The footer shows each decision, for example
+`route: local · z-ai/glm-5.3-flash · 57 ms`. `/rayline` shows the session's
+decisions (the first one encodes the whole prompt, so it is slower), the
+models that took the turns, and `Hosted decisions this session: 0`.
+`/rayline stop` and `/rayline start` stop and start the local process.
 
 There is no fallback to hosted ARC: when the local process is not running or
 cannot decide, the turn fails and says how to start it. After a restart the
