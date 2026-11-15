@@ -6,7 +6,7 @@
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
 import { type Config, type Target, targetsOf } from "./config.ts";
-import { type LocalRoutes, NOT_RUNNING } from "./local.ts";
+import { type LocalRoutes, NOT_RUNNING, START_HINT } from "./local.ts";
 import { ARC_MODEL, actionIdOf, capacity, executionContext, POLICY, PRESET, replyAllowance, routing } from "./execution.ts";
 import { type RouteRequest, RoutesError, requestRoute, sha256 } from "./routes.ts";
 import { toAnthropic } from "./transcript.ts";
@@ -63,18 +63,30 @@ export function createRouter(config: Config, deps: RouterDeps) {
 			return fetchRoute(body, { apiKey, sessionId, url: config.url, timeoutMs: config.timeout_ms, signal });
 		}
 		if (!deps.localRoutes) throw new Error("Rayline: local decisions are not available here");
-		const once = (routes: LocalRoutes) =>
-			fetchRoute(body, { apiKey: routes.token, sessionId, url: routes.url, timeoutMs: config.timeout_ms, signal });
+		let token = "";
+		const once = (routes: LocalRoutes) => {
+			token = routes.token;
+			return fetchRoute(body, { apiKey: routes.token, sessionId, url: routes.url, timeoutMs: config.timeout_ms, signal });
+		};
+		// Errors from the local process are shown in Pi: never with its token in them.
+		const redact = (error: unknown) => {
+			if (token && error instanceof Error && error.message.includes(token)) error.message = error.message.replaceAll(token, "<token>");
+			return error;
+		};
 		try {
 			return await once(await deps.localRoutes(signal));
 		} catch (error) {
 			const restarted = error instanceof TypeError || (error instanceof RoutesError && error.status === 401);
-			if (!restarted || signal?.aborted) throw error;
+			if (signal?.aborted) throw error;
+			if (error instanceof DOMException && error.name === "TimeoutError") throw new Error(`Rayline: local ARC did not decide in time. ${START_HINT}`);
+			if (!restarted) throw redact(error);
 			try {
 				return await once(await deps.localRoutes(signal, true));
 			} catch (again) {
 				if (again instanceof TypeError) throw new Error(NOT_RUNNING);
-				throw again;
+				if (again instanceof RoutesError && again.status === 401) throw new Error(`Rayline: local ARC refused its token. ${START_HINT}`);
+				if (again instanceof DOMException && again.name === "TimeoutError") throw new Error(`Rayline: local ARC did not decide in time. ${START_HINT}`);
+				throw redact(again);
 			}
 		}
 	}

@@ -84,5 +84,7 @@ export async function requestRoute(body: RouteRequest, options: RequestOptions):
 	if (!response.ok) {
 		throw new RoutesError(response.status, result?.error?.code, result?.error?.message ?? response.statusText);
 	}
+	// A connection dropped mid-body is a network failure, like one dropped before the status.
+	if (result === undefined) throw new TypeError("Rayline Routes API: the response ended early");
 	return result as RouteResponse;
 }

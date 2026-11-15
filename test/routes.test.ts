@@ -47,3 +47,18 @@ test("an error response becomes a RoutesError with its code", async () => {
 		server.close();
 	}
 });
+
+test("a 200 whose body is cut off is a network failure, not an empty route", async () => {
+	const server = createServer((_req, res) => {
+		res.writeHead(200, { "content-type": "application/json", "content-length": "100" });
+		res.write('{"route_id":');
+		res.destroy();
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/routes`;
+	try {
+		await assert.rejects(requestRoute(body, { apiKey: "k", sessionId: "c", url }), TypeError);
+	} finally {
+		server.close();
+	}
+});

@@ -44,3 +44,18 @@ test("the cache asks once, and again only when told", async () => {
 	await routes(undefined, true);
 	assert.equal(calls, 2);
 });
+
+test("a command Pi stopped (timeout) is not a success", async () => {
+	const killed: Run = async () => ({ stdout: "", stderr: "", code: 0, killed: true });
+	await assert.rejects(findLocalRoutes(killed), /did not finish in time/);
+});
+
+test("a missing rayline binary gets the install hint", async () => {
+	const missing: Run = async () => ({ stdout: "", stderr: "spawn rayline ENOENT", code: 1 });
+	await assert.rejects(findLocalRoutes(missing), /Install the Rayline CLI 0\.5\.2 or later/);
+});
+
+test("an unreadable token file says how to restart, without a stack of Node errors", async () => {
+	const gone = status({ ...running, routes: { ...running.routes, token_file: join(dir, "nope") } });
+	await assert.rejects(findLocalRoutes(gone), /cannot read .*nope \(ENOENT\)\. Local decisions never fall back/);
+});

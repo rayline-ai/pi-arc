@@ -96,7 +96,7 @@ export default function (pi: ExtensionAPI) {
 				if (command === "start" || command === "stop") {
 					ctx.ui.notify(command === "start" ? "Starting local ARC. The first start downloads about 1 GB, once." : "Stopping local ARC…", "info");
 					await rayline(run, command === "start" ? ["start", "--decisions", "local"] : ["stop"], { timeout: 15 * 60_000 });
-					await localRoutes(undefined, true).catch(() => undefined);
+					if (command === "start") await localRoutes(undefined, true);
 					ctx.ui.setStatus("rayline", command === "start" ? "route: local, ready" : "route: local, not running");
 					return ctx.ui.notify(command === "start" ? "Local ARC ready: routing decisions run locally." : "Local ARC stopped.", "info");
 				}

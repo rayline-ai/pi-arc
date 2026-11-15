@@ -194,3 +194,12 @@ test("an unreachable local process fails the turn with how to start it", async (
 	}, [{ url: "http://127.0.0.1:9/v1/routes", token: "tok" }]);
 	await assert.rejects(r.route(request({}), fakeCtx().ctx), /\/rayline start/);
 });
+
+test("a local error that echoes the token shows it redacted", async () => {
+	const r = localRouter((_body, token) => {
+		throw new RoutesError(400, "invalid_request", `bad header Bearer ${token}`);
+	}, [{ url: "http://127.0.0.1:9/v1/routes", token: "tok-secret" }]);
+	const error = await r.route(request({}), fakeCtx().ctx).catch((e) => e);
+	assert.doesNotMatch(error.message, /tok-secret/);
+	assert.match(error.message, /<token>/);
+});
