@@ -59,6 +59,8 @@ export function createRouter(config: Config, deps: RouterDeps) {
 	const stats = deps.stats ?? newStats();
 	const fetchRoute = deps.requestRoute ?? requestRoute;
 	const local = config.decisions === "local";
+	/** The footer text of the last decision, shown again while its model keeps the task. */
+	let decided: string | undefined;
 
 	/** Hosted: Rayline's Routes API with the Rayline key. Local: the local process, looked up again once after a restart. */
 	async function ask(body: RouteRequest, ctx: ExtensionContext, signal?: AbortSignal) {
@@ -130,7 +132,8 @@ export function createRouter(config: Config, deps: RouterDeps) {
 		// Tool follow-ups stay on the model that started the task, and keep its prompt cache.
 		// After compaction (the conversation's start changed), ARC chooses again.
 		if (reason === "continuation" && previous && !rewritten) {
-			// The footer keeps showing the decision that chose this model.
+			// The footer shows the decision that chose this model, not a retry or error from earlier.
+			if (decided) status(decided);
 			return keep(previous, state);
 		}
 		// A retry stays on the failed model unless its provider is overloaded; then ARC chooses without it.
@@ -202,7 +205,8 @@ export function createRouter(config: Config, deps: RouterDeps) {
 			stats.firstMs ??= ms;
 			stats.models[target.pi] = (stats.models[target.pi] ?? 0) + 1;
 			stats.last = `${response.route_id}: ${target.pi} in ${ms} ms`;
-			status(local ? `route: local · ${target.arc} · ${ms} ms` : `route: ${ms} ms`);
+			decided = local ? `route: local · ${target.arc} · ${ms} ms` : `route: ${ms} ms`;
+			status(decided);
 			return { model, thinkingLevel: THINKING, state: { head, ...(response.route_id && { route: response.route_id }) } };
 		} catch (error) {
 			// Local decisions never fall back: the turn fails and says how to fix it.

@@ -203,3 +203,17 @@ test("a local error that echoes the token shows it redacted", async () => {
 	assert.doesNotMatch(error.message, /tok-secret/);
 	assert.match(error.message, /<token>/);
 });
+
+test("a tool follow-up after a retry shows the decision again, not the retry", async () => {
+	const statuses: string[] = [];
+	const { ctx } = fakeCtx();
+	(ctx.ui as { setStatus: (key: string, text: string) => void }).setStatus = (_key, text) => statuses.push(text);
+	const r = router(chose("z-ai/glm-5.3-flash"));
+	const first = await r.route(request({}), ctx);
+	const previous = { model: catalog["local/glm"], thinkingLevel: "medium" } as Request["previous"];
+	const failed = { model: catalog["local/glm"], message: { errorMessage: "socket hang up" } } as Request["failed"];
+	await r.route(request({ reason: "retry", failed, state: first.state }), ctx);
+	assert.equal(statuses.at(-1), "route: retry");
+	await r.route(request({ reason: "continuation", previous, state: first.state }), ctx);
+	assert.match(statuses.at(-1)!, /^route: \d+ ms$/);
+});
