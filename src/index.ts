@@ -10,7 +10,7 @@ import { type Config, configPath, loadConfig, targetsOf } from "./config.ts";
 import { localRoutesCache, rayline, type Run } from "./local.ts";
 import { setup } from "./setup.ts";
 import { ROUTES_URL } from "./routes.ts";
-import { createRouter, type RouterState, type Stats } from "./router.ts";
+import { createRouter, newStats, type RouterState, type Stats } from "./router.ts";
 
 const PROVIDER = "rayline";
 
@@ -31,24 +31,27 @@ export default function (pi: ExtensionAPI) {
 
 	// The `rayline` provider holds the key (auth.json, else RAYLINE_API_KEY) and runs every
 	// `rayline/<id>` model through Rayline's Messages API, pinned to that model.
-	const gateway = config ? targetsOf(config).filter((target) => target.pi.startsWith(`${PROVIDER}/`)) : [];
-	pi.registerProvider(PROVIDER, {
-		name: "Rayline",
-		baseUrl: new URL(config?.url ?? ROUTES_URL).origin,
-		api: "anthropic-messages",
-		apiKey: "$RAYLINE_API_KEY",
-		models: gateway.map((target) => ({
-			id: target.pi.slice(PROVIDER.length + 1),
-			name: `${target.arc} via Rayline`,
-			reasoning: true,
-			input: ["text", "image"],
-			// Rayline bills these turns; Pi shows them at zero.
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			// Conservative: Pi compacts against this, and it cannot see the real model's limits here.
-			contextWindow: 200_000,
-			maxTokens: 32_000,
-		})),
-	});
+	const registerGateway = () => {
+		const gateway = config ? targetsOf(config).filter((target) => target.pi.startsWith(`${PROVIDER}/`)) : [];
+		pi.registerProvider(PROVIDER, {
+			name: "Rayline",
+			baseUrl: new URL(config?.url ?? ROUTES_URL).origin,
+			api: "anthropic-messages",
+			apiKey: "$RAYLINE_API_KEY",
+			models: gateway.map((target) => ({
+				id: target.pi.slice(PROVIDER.length + 1),
+				name: `${target.arc} via Rayline`,
+				reasoning: true,
+				input: ["text", "image"],
+				// Rayline bills these turns; Pi shows them at zero.
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				// Conservative: Pi compacts against this, and it cannot see the real model's limits here.
+				contextWindow: 200_000,
+				maxTokens: 32_000,
+			})),
+		});
+	};
+	registerGateway();
 
 	const run: Run = (command, args, options) => pi.exec(command, args, options);
 	const localRoutes = localRoutesCache(run);
@@ -59,8 +62,10 @@ export default function (pi: ExtensionAPI) {
 			.filter((tool) => active.has(tool.name))
 			.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters }));
 	};
+	// One session's totals, kept when /rayline setup reloads the config.
+	const stats = newStats();
 	const makeRouter = () =>
-		config && createRouter(config, { apiKey: (ctx) => ctx.modelRegistry.getApiKeyForProvider(PROVIDER), localRoutes, tools });
+		config && createRouter(config, { apiKey: (ctx) => ctx.modelRegistry.getApiKeyForProvider(PROVIDER), localRoutes, tools, stats });
 	let router = makeRouter();
 
 	pi.registerVirtualModel<RouterState>({
@@ -89,6 +94,7 @@ export default function (pi: ExtensionAPI) {
 						path,
 						reload: () => {
 							load();
+							registerGateway();
 							router = makeRouter();
 						},
 					});
@@ -125,7 +131,7 @@ export function summary(config: Config, stats: Stats, source: string): string {
 		`${lookups} ${lookups === 1 ? "turn" : "turns"} decided${times}`,
 		...(used.length ? [`Models: ${used.join(", ")}`] : []),
 		local
-			? `Hosted decisions this session: 0`
+			? `Hosted decisions this session: ${stats.hosted}`
 			: `${stats.encodedTokens} encoded tokens billed, ${stats.fallbacks} fallbacks`,
 		`Last: ${last ?? "none yet"}`,
 	].join("\n");

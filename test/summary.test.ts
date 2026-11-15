@@ -5,7 +5,7 @@ import { summary } from "../src/index.ts";
 test("/rayline in local mode splits the first decision from later ones and counts hosted decisions", () => {
 	const text = summary(
 		{ decisions: "local" },
-		{ lookups: 3, encodedTokens: 0, elapsedMs: 400, firstMs: 300, fallbacks: 0, models: { "gpu-box/glm-5.3-flash": 2, "rayline/claude-opus-5-5": 1 }, last: "x" },
+		{ lookups: 3, encodedTokens: 0, elapsedMs: 400, firstMs: 300, fallbacks: 0, models: { "gpu-box/glm-5.3-flash": 2, "rayline/claude-opus-5-5": 1 }, hosted: 0, last: "x" },
 		"/tmp/rayline.json",
 	);
 	assert.equal(

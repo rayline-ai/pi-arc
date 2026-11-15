@@ -6,7 +6,7 @@
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
 import { type Config, type Target, targetsOf } from "./config.ts";
-import { type LocalRoutes, NOT_RUNNING, START_HINT } from "./local.ts";
+import { type LocalRoutes, NOT_RUNNING, RESTART_HINT, START_HINT } from "./local.ts";
 import { ARC_MODEL, actionIdOf, capacity, executionContext, POLICY, PRESET, replyAllowance, routing } from "./execution.ts";
 import { type RouteRequest, RoutesError, requestRoute, sha256 } from "./routes.ts";
 import { toAnthropic } from "./transcript.ts";
@@ -37,6 +37,8 @@ export interface Stats {
 	firstMs?: number;
 	/** Turns ARC gave each Pi model (`provider/id`). */
 	models: Record<string, number>;
+	/** Lookups that went to the hosted Routes API. */
+	hosted: number;
 	last?: string;
 }
 
@@ -46,11 +48,15 @@ export interface RouterDeps {
 	localRoutes?(signal?: AbortSignal, fresh?: boolean): Promise<LocalRoutes>;
 	tools(): RouteRequest["tools"];
 	requestRoute?: typeof requestRoute;
+	/** Session totals, kept across routers when the config is reloaded. */
+	stats?: Stats;
 }
+
+export const newStats = (): Stats => ({ lookups: 0, encodedTokens: 0, elapsedMs: 0, fallbacks: 0, models: {}, hosted: 0 });
 
 export function createRouter(config: Config, deps: RouterDeps) {
 	const targets = targetsOf(config);
-	const stats: Stats = { lookups: 0, encodedTokens: 0, elapsedMs: 0, fallbacks: 0, models: {} };
+	const stats = deps.stats ?? newStats();
 	const fetchRoute = deps.requestRoute ?? requestRoute;
 	const local = config.decisions === "local";
 
@@ -84,7 +90,7 @@ export function createRouter(config: Config, deps: RouterDeps) {
 				return await once(await deps.localRoutes(signal, true));
 			} catch (again) {
 				if (again instanceof TypeError) throw new Error(NOT_RUNNING);
-				if (again instanceof RoutesError && again.status === 401) throw new Error(`Rayline: local ARC refused its token. ${START_HINT}`);
+				if (again instanceof RoutesError && again.status === 401) throw new Error(`Rayline: local ARC refused its token. ${RESTART_HINT}`);
 				if (again instanceof DOMException && again.name === "TimeoutError") throw new Error(`Rayline: local ARC did not decide in time. ${START_HINT}`);
 				throw redact(again);
 			}
@@ -190,6 +196,7 @@ export function createRouter(config: Config, deps: RouterDeps) {
 
 			const ms = Math.round(performance.now() - started);
 			stats.lookups += 1;
+			if (!local) stats.hosted += 1;
 			stats.encodedTokens += response.usage?.encoded_input_tokens ?? 0;
 			stats.elapsedMs += ms;
 			stats.firstMs ??= ms;

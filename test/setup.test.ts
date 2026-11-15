@@ -84,3 +84,19 @@ test("a local process already running with local decisions is reused", async () 
 	assert.ok(!ran.includes("local start --decisions local"));
 	assert.ok(!ran.includes("auth login"));
 });
+
+test("a sign-in Pi stopped after 5 minutes is not a sign-in, and nothing is saved", async () => {
+	const u = ui(LOCAL_CHOICE);
+	const path = join(dir, "login-timeout.json");
+	const ran: string[] = [];
+	const run: Run = async (_bin, args) => {
+		ran.push(args.join(" "));
+		if (args[0] === "--version") return { stdout: "rayline 0.5.2", stderr: "", code: 0 };
+		if (args.join(" ") === "auth status") return { stdout: "Not logged in to prod.", stderr: "", code: 0 };
+		return { stdout: "", stderr: "", code: 0, killed: true };
+	};
+	await setup(u, { run, path, reload: () => {}, appleSilicon: true });
+	assert.match(u.notes.at(-1)!, /did not finish in 5 minutes/);
+	assert.ok(!ran.includes("local start --decisions local"));
+	assert.throws(() => readFileSync(path));
+});

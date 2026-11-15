@@ -29,6 +29,8 @@ export function raylineBin(home = homedir()): string {
 
 export const START_HINT =
 	"Local decisions never fall back to hosted. Run /rayline start, or switch to hosted decisions with /rayline setup.";
+/** For a running local process whose token no longer works: start fails while it runs, so stop it first. */
+export const RESTART_HINT = "Run /rayline stop, then /rayline start.";
 export const NOT_RUNNING = `Rayline local isn't running, so ARC can't decide this turn. ${START_HINT}`;
 
 export interface LocalRoutes {
@@ -61,15 +63,19 @@ export async function rayline(run: Run, args: string[], options: { timeout?: num
 	return result.stdout;
 }
 
-/** The local Routes API, or an error saying how to start it. */
-export async function findLocalRoutes(run: Run, signal?: AbortSignal): Promise<LocalRoutes> {
+/** `rayline local status --json`, parsed. */
+export async function localStatus(run: Run, signal?: AbortSignal): Promise<Status> {
 	const stdout = await rayline(run, ["status", "--json"], { timeout: 10_000, signal });
-	let status: Status;
 	try {
-		status = JSON.parse(stdout);
+		return JSON.parse(stdout);
 	} catch {
 		throw new Error("Rayline: `rayline local status --json` did not print JSON. Local decisions need the Rayline CLI 0.5.2 or later.");
 	}
+}
+
+/** The local Routes API, or an error saying how to start it. */
+export async function findLocalRoutes(run: Run, signal?: AbortSignal): Promise<LocalRoutes> {
+	const status = await localStatus(run, signal);
 	if (!status.running) throw new Error(NOT_RUNNING);
 	if (status.decisions === "local" && (!status.routes?.url || !status.routes.token_file)) {
 		throw new Error("Rayline: `rayline local status --json` lists no local Routes API. Local decisions need the Rayline CLI 0.5.2 or later.");
@@ -83,9 +89,9 @@ export async function findLocalRoutes(run: Run, signal?: AbortSignal): Promise<L
 	try {
 		token = (await readFile(status.routes.token_file, "utf8")).trim();
 	} catch (error) {
-		throw new Error(`Rayline: cannot read ${status.routes.token_file} (${(error as NodeJS.ErrnoException).code}). ${START_HINT}`);
+		throw new Error(`Rayline: cannot read ${status.routes.token_file} (${(error as NodeJS.ErrnoException).code}). ${RESTART_HINT}`);
 	}
-	if (!token) throw new Error(`Rayline: ${status.routes.token_file} is empty. ${START_HINT}`);
+	if (!token) throw new Error(`Rayline: ${status.routes.token_file} is empty. ${RESTART_HINT}`);
 	return { url: status.routes.url, token };
 }
 

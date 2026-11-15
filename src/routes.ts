@@ -80,7 +80,11 @@ export async function requestRoute(body: RouteRequest, options: RequestOptions):
 		},
 		body: JSON.stringify(body),
 	});
-	const result = await response.json().catch(() => undefined);
+	const result = await response.json().catch((error) => {
+		// A timeout or abort while reading the body is that, not a malformed body.
+		if (error?.name === "TimeoutError" || error?.name === "AbortError") throw error;
+		return undefined;
+	});
 	if (!response.ok) {
 		throw new RoutesError(response.status, result?.error?.code, result?.error?.message ?? response.statusText);
 	}

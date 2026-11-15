@@ -57,5 +57,5 @@ test("a missing rayline binary gets the install hint", async () => {
 
 test("an unreadable token file says how to restart, without a stack of Node errors", async () => {
 	const gone = status({ ...running, routes: { ...running.routes, token_file: join(dir, "nope") } });
-	await assert.rejects(findLocalRoutes(gone), /cannot read .*nope \(ENOENT\)\. Local decisions never fall back/);
+	await assert.rejects(findLocalRoutes(gone), /cannot read .*nope \(ENOENT\)\. Run \/rayline stop, then \/rayline start/);
 });

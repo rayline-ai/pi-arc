@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { arch, platform } from "node:os";
-import { rayline, raylineBin, type Run } from "./local.ts";
+import { localStatus, raylineBin, rayline, type Run } from "./local.ts";
 
 export const INSTALL = "curl -fsSL https://get.rayline.ai/install.sh | bash";
 export const LOCAL_CHOICE = "Local decisions with the Rayline CLI (recommended on this Mac)";
@@ -73,20 +73,27 @@ export async function setup(ui: SetupUI, deps: SetupDeps): Promise<void> {
 	}
 	const done = [`[done] ${version.replace(/^rayline /, "Rayline CLI ")}`];
 
+	const fail = (message: string) => {
+		ui.setStatus("rayline", undefined);
+		ui.notify(message, "error");
+	};
 	const auth = await deps.run(bin, ["auth", "status"], { timeout: 10_000 });
+	if (auth.killed || auth.code !== 0) return fail(`Rayline: \`rayline auth status\` failed: ${(auth.stderr || auth.stdout).trim() || "no answer"}`);
 	if (/not logged in/i.test(auth.stdout + auth.stderr)) {
 		step("signing in, your browser opens");
 		ui.notify([...done, "[working] Signing in: your browser opens to sign in to Rayline"].join("\n"), "info");
 		const login = await deps.run(bin, ["auth", "login"], { timeout: 5 * 60_000 });
-		if (login.code !== 0) {
-			ui.setStatus("rayline", undefined);
-			ui.notify(`Rayline: sign-in did not finish: ${(login.stderr || login.stdout).trim()}`, "error");
-			return;
-		}
+		if (login.killed) return fail("Rayline: sign-in did not finish in 5 minutes. Run /rayline setup again.");
+		if (login.code !== 0) return fail(`Rayline: sign-in did not finish: ${(login.stderr || login.stdout).trim()}`);
 	}
 	done.push("[done] Signed in");
 
-	const status = JSON.parse(await rayline(deps.run, ["status", "--json"], { timeout: 10_000 })) as { running?: boolean; decisions?: string };
+	let status: Awaited<ReturnType<typeof localStatus>>;
+	try {
+		status = await localStatus(deps.run);
+	} catch (error) {
+		return fail((error as Error).message);
+	}
 	if (status.running && status.decisions !== "local") {
 		ui.setStatus("rayline", undefined);
 		ui.notify(`Rayline: the local process runs with ${status.decisions} decisions. Run /rayline stop, then /rayline setup again.`, "error");
