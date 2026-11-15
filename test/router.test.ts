@@ -217,3 +217,20 @@ test("a tool follow-up after a retry shows the decision again, not the retry", a
 	await r.route(request({ reason: "continuation", previous, state: first.state }), ctx);
 	assert.match(statuses.at(-1)!, /^route: \d+ ms$/);
 });
+
+test("after a hosted fallback, tool follow-ups keep showing that routing was unavailable", async () => {
+	const statuses: string[] = [];
+	const { ctx } = fakeCtx();
+	(ctx.ui as { setStatus: (key: string, text: string) => void }).setStatus = (_key, text) => statuses.push(text);
+	let fail = false;
+	const r = router((body) => {
+		if (fail) throw new RoutesError(503, "unavailable", "try later");
+		return chose("z-ai/glm-5.3-flash")(body);
+	});
+	const first = await r.route(request({}), ctx);
+	fail = true;
+	const previous = { model: catalog["local/glm"], thinkingLevel: "medium" } as Request["previous"];
+	await r.route(request({ previous, state: first.state }), ctx);
+	await r.route(request({ reason: "continuation", previous, state: first.state }), ctx);
+	assert.equal(statuses.at(-1), "route: unavailable");
+});

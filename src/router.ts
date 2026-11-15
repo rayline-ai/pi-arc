@@ -215,7 +215,8 @@ export function createRouter(config: Config, deps: RouterDeps) {
 			const routed = fallback(request, ctx, state, error);
 			stats.fallbacks += 1;
 			stats.last = `unavailable: ${routed.model.provider}/${routed.model.id}`;
-			status("route: unavailable");
+			decided = "route: unavailable";
+			status(decided);
 			ctx.ui.notify(`Rayline routing unavailable, using ${routed.model.id}: ${(error as Error).message}`, "warning");
 			return routed;
 		}
