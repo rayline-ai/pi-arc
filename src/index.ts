@@ -37,7 +37,9 @@ export default function (pi: ExtensionAPI) {
 			name: "Rayline",
 			baseUrl: new URL(config?.url ?? ROUTES_URL).origin,
 			api: "anthropic-messages",
-			apiKey: "$RAYLINE_API_KEY",
+			// Pi offers rayline/arc only when this provider has a key. With local decisions and no
+			// rayline/ models, nothing is sent to Rayline, so a placeholder stands in for the key.
+			apiKey: config?.decisions === "local" && gateway.length === 0 ? "local-decisions-no-key-needed" : "$RAYLINE_API_KEY",
 			models: gateway.map((target) => ({
 				id: target.pi.slice(PROVIDER.length + 1),
 				name: `${target.arc} via Rayline`,
@@ -103,6 +105,12 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify(command === "start" ? "Starting local ARC. The first start downloads about 1 GB, once." : "Stopping local ARC…", "info");
 					await rayline(run, command === "start" ? ["start", "--decisions", "local"] : ["stop"], { timeout: 15 * 60_000 });
 					if (command === "start") await localRoutes(undefined, true);
+					if (config?.decisions !== "local") {
+						return ctx.ui.notify(
+							command === "start" ? "Local ARC ready. This session uses hosted decisions; choose local with /rayline setup." : "Local ARC stopped.",
+							"info",
+						);
+					}
 					ctx.ui.setStatus("rayline", command === "start" ? "route: local, ready" : "route: local, not running");
 					return ctx.ui.notify(command === "start" ? "Local ARC ready: routing decisions run locally." : "Local ARC stopped.", "info");
 				}

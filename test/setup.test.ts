@@ -100,3 +100,13 @@ test("a sign-in Pi stopped after 5 minutes is not a sign-in, and nothing is save
 	assert.ok(!ran.includes("local start --decisions local"));
 	assert.throws(() => readFileSync(path));
 });
+
+test("a hosted url in rayline.json is refused before anything starts", async () => {
+	const u = ui(LOCAL_CHOICE);
+	const path = join(dir, "has-url.json");
+	writeFileSync(path, JSON.stringify({ url: "https://example.test/v1/routes" }));
+	const { run, ran } = cli({});
+	await setup(u, { run, path, reload: () => {}, appleSilicon: true });
+	assert.deepEqual(ran, []);
+	assert.match(u.notes[0], /Remove it/);
+});

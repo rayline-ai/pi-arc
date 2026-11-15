@@ -59,6 +59,16 @@ export async function setup(ui: SetupUI, deps: SetupDeps): Promise<void> {
 		return;
 	}
 
+	// Refuse a config local decisions can't use before starting anything.
+	try {
+		const existing = JSON.parse(readFileSync(deps.path, "utf8"));
+		if (existing.url !== undefined) {
+			ui.notify(`Rayline: ${deps.path} sets "url", the hosted Routes API. Remove it to use local decisions.`, "error");
+			return;
+		}
+	} catch {
+		// A missing file is fine; an unreadable one fails when it is saved.
+	}
 	const step = (text: string) => ui.setStatus("rayline", `rayline: ${text}`);
 	const bin = raylineBin();
 	let version: string;
