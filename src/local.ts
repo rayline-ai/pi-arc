@@ -27,6 +27,9 @@ export function raylineBin(home = homedir()): string {
 	return existsSync(installed) ? installed : "rayline";
 }
 
+/** A path for display, with the home directory as `~`. */
+export const shown = (path: string, home = homedir()) => (path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path);
+
 export const START_HINT =
 	"Local decisions never fall back to hosted. Run /rayline start, or switch to hosted decisions with /rayline setup.";
 /** For a running local process whose token no longer works: start fails while it runs, so stop it first. */

@@ -59,3 +59,9 @@ test("an unreadable token file says how to restart, without a stack of Node erro
 	const gone = status({ ...running, routes: { ...running.routes, token_file: join(dir, "nope") } });
 	await assert.rejects(findLocalRoutes(gone), /cannot read .*nope \(ENOENT\)\. Run \/rayline stop, then \/rayline start/);
 });
+
+test("paths under the home directory are shown with ~", async () => {
+	const { shown } = await import("../src/local.ts");
+	assert.equal(shown("/home/u/.pi/agent/rayline.json", "/home/u"), "~/.pi/agent/rayline.json");
+	assert.equal(shown("/etc/rayline.json", "/home/u"), "/etc/rayline.json");
+});

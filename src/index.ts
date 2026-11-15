@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Config, configPath, loadConfig, targetsOf } from "./config.ts";
-import { localRoutesCache, rayline, type Run } from "./local.ts";
+import { localRoutesCache, rayline, type Run, shown } from "./local.ts";
 import { setup } from "./setup.ts";
 import { ROUTES_URL } from "./routes.ts";
 import { createRouter, newStats, type RouterState, type Stats } from "./router.ts";
@@ -119,7 +119,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (command) return ctx.ui.notify(`Rayline: unknown command /rayline ${command}. Use /rayline, /rayline setup, /rayline start or /rayline stop.`, "error");
 			if (!router || !config) return ctx.ui.notify(String(configError), "error");
-			ctx.ui.notify(summary(config, router.stats, existsSync(path) ? path : "built-in (no rayline.json)"), "info");
+			ctx.ui.notify(summary(config, router.stats, existsSync(path) ? shown(path) : "built-in (no rayline.json)"), "info");
 		},
 	});
 }

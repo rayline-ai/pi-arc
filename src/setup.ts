@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { arch, platform } from "node:os";
-import { localStatus, raylineBin, rayline, type Run } from "./local.ts";
+import { localStatus, raylineBin, rayline, type Run, shown } from "./local.ts";
 
 export const INSTALL = "curl -fsSL https://get.rayline.ai/install.sh | bash";
 export const LOCAL_CHOICE = "Local decisions with the Rayline CLI (recommended on this Mac)";
@@ -51,7 +51,7 @@ export async function setup(ui: SetupUI, deps: SetupDeps): Promise<void> {
 		deps.reload();
 		ui.notify(
 			[
-				`Saved "decisions": "hosted" in ${deps.path}.`,
+				`Saved "decisions": "hosted" in ${shown(deps.path)}.`,
 				"Add your Rayline key with /login rayline (or set RAYLINE_API_KEY), then pick the model: /model rayline/arc",
 			].join("\n"),
 			"info",
@@ -63,7 +63,7 @@ export async function setup(ui: SetupUI, deps: SetupDeps): Promise<void> {
 	try {
 		const existing = JSON.parse(readFileSync(deps.path, "utf8"));
 		if (existing.url !== undefined) {
-			ui.notify(`Rayline: ${deps.path} sets "url", the hosted Routes API. Remove it to use local decisions.`, "error");
+			ui.notify(`Rayline: ${shown(deps.path)} sets "url", the hosted Routes API. Remove it to use local decisions.`, "error");
 			return;
 		}
 	} catch {
@@ -125,5 +125,5 @@ export async function setup(ui: SetupUI, deps: SetupDeps): Promise<void> {
 	saveDecisions(deps.path, "local");
 	deps.reload();
 	ui.setStatus("rayline", "route: local, ready");
-	ui.notify([...done, `Saved "decisions": "local" in ${deps.path}.`, "Pick the model: /model rayline/arc"].join("\n"), "info");
+	ui.notify([...done, `Saved "decisions": "local" in ${shown(deps.path)}.`, "Pick the model: /model rayline/arc"].join("\n"), "info");
 }

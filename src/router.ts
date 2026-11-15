@@ -130,7 +130,7 @@ export function createRouter(config: Config, deps: RouterDeps) {
 		// Tool follow-ups stay on the model that started the task, and keep its prompt cache.
 		// After compaction (the conversation's start changed), ARC chooses again.
 		if (reason === "continuation" && previous && !rewritten) {
-			status("route: kept");
+			// The footer keeps showing the decision that chose this model.
 			return keep(previous, state);
 		}
 		// A retry stays on the failed model unless its provider is overloaded; then ARC chooses without it.
