@@ -53,6 +53,37 @@ its ARC model ID to the Pi model:
 ARC now prefers the local model when it can do the job and the conversation
 fits, and uses the cloud models otherwise.
 
+## Local routing decisions
+
+With the [Rayline CLI](https://github.com/rayline-ai/rayline-cli) 0.5.2 or
+later on an Apple Silicon Mac, routing decisions run locally: ARC runs in the
+Rayline CLI's local process on your machine, and Pi still runs each turn
+with your own Pi, extensions and models. In Pi:
+
+```
+/rayline setup
+```
+
+and choose local decisions. Setup checks the Rayline CLI (and shows the
+install command if it is missing), signs you in with `rayline auth login`,
+starts the local process (`rayline local start --decisions local`; the first
+start downloads about 1 GB, once), and saves `"decisions": "local"` in
+`~/.pi/agent/rayline.json`. Then pick `/model rayline/arc`.
+
+The footer shows each decision, for example
+`route: local · z-ai/glm-5.3-flash · 57 ms`. `/rayline` shows the session's
+decisions (the first one encodes the whole prompt, so it is slower), the
+models that took the turns, and `Hosted decisions this session: 0`.
+`/rayline stop` and `/rayline start` stop and start the local process.
+
+There is no fallback to hosted ARC: when the local process is not running or
+cannot decide, the turn fails and says how to start it. After a restart the
+extension finds the new address and token itself, with
+`rayline local status --json`.
+
+Local decisions are not metered. Turns served by Rayline Cloud models are
+billed as usual.
+
 ## Configuration
 
 `~/.pi/agent/rayline.json` is optional; every field has a default. Each
@@ -63,8 +94,9 @@ model entry maps an ARC model ID to the Pi model that runs it.
 | `local` | Models you run yourself. Priced at zero and preferred when ARC expects them to do the job | none |
 | `cloud` | Cloud models. `rayline/<id>` runs through Rayline with your Rayline key (`<id>` is Rayline's model name, e.g. `claude-opus-5-5` or `openai/gpt-6-luna`); `anthropic/...`, `openai/...` use your own provider key in Pi | Opus 5.5, Haiku 5.5 and GPT-6 Luna via Rayline |
 | `fallback` | Pi model for a first turn ARC cannot route | the first `local` model, else Haiku via Rayline |
-| `url` | Routes API URL | `https://api.rayline.ai/v1/routes` |
+| `url` | Hosted Routes API URL; not with `decisions: "local"` | `https://api.rayline.ai/v1/routes` |
 | `timeout_ms` | Lookup timeout | 8000 |
+| `decisions` | `hosted`: Rayline's Routes API decides, with your Rayline key. `local`: the Rayline CLI's local process decides on this machine | `hosted` |
 
 [`examples/`](examples) has a local + Rayline setup and a cloud-only one with
 your own provider keys. Set `RAYLINE_PI_CONFIG` to use another file.
@@ -78,7 +110,7 @@ your own provider keys. Set `RAYLINE_PI_CONFIG` to use another file.
 | Retry after an error | Stays on the same model; if the provider is overloaded, ARC chooses again without it |
 | After compaction | ARC chooses again, told that the history was compacted |
 | Compaction summary | Stays on the last model, no lookup |
-| ARC unreachable, timeout, 429/5xx/413 | Stays on the last model (or `fallback`) and warns |
+| ARC unreachable, timeout, 429/5xx/413 | Hosted: stays on the last model (or `fallback`) and warns. Local decisions: the turn fails |
 | Bad key, bad config, empty balance | The turn fails with Rayline's error, so you can fix it |
 
 These are the Rayline CLI's settings: `arc-swift-1.0`, the
@@ -89,8 +121,9 @@ lists every field.
 
 ## What Rayline sees, and what it costs
 
-Each lookup sends the conversation, system prompt and active tool schemas to
-Rayline. A local turn runs on your server; a `rayline/` cloud turn runs
+With hosted decisions, each lookup sends the conversation, system prompt and
+active tool schemas to Rayline; with local decisions, lookups stay on this
+machine. A local turn runs on your server; a `rayline/` cloud turn runs
 through Rayline and is billed there (Pi shows it at $0); other cloud turns go
 from Pi to your provider. Lookups are billed per token ARC reads, take about
 1–2 s, and are limited to 30 per minute per account. See

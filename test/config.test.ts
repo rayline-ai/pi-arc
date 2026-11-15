@@ -33,3 +33,14 @@ test("a file named by RAYLINE_PI_CONFIG must exist", () => {
 		delete process.env[CONFIG_ENV];
 	}
 });
+
+test("decisions is hosted by default, local on request, and nothing else", () => {
+	delete process.env[CONFIG_ENV];
+	assert.equal(loadConfig(file("default-decisions.json", {})).decisions, "hosted");
+	assert.equal(loadConfig(file("local-decisions.json", { decisions: "local" })).decisions, "local");
+	assert.throws(() => loadConfig(file("odd-decisions.json", { decisions: "offline" })), /must be "hosted" or "local"/);
+});
+
+test("local decisions do not take a hosted Routes API url", () => {
+	assert.throws(() => loadConfig(file("local-url.json", { decisions: "local", url: "https://example.test/v1/routes" })), /"url" is the hosted/);
+});

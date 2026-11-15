@@ -63,5 +63,23 @@ marked `caller_estimated`, which ARC does not count as a fit.
 
 | Status | Handling |
 |---|---|
-| `429`, `5xx`, `413`, network error, timeout | Fall back to the last model, or `fallback`, with a warning |
+| `429`, `5xx`, `413`, network error, timeout | Hosted: fall back to the last model, or `fallback`, with a warning. Local decisions: see below |
 | Any other `4xx` | Fail the turn with Rayline's message |
+
+## Local decisions
+
+With `"decisions": "local"` the same request goes to the Rayline CLI's local
+process instead of `api.rayline.ai`. The extension runs
+`rayline local status --json` (from `~/.rayline/bin`, else `PATH`) and uses:
+
+| Field | Use |
+|---|---|
+| `running` | `false`: the turn fails, saying to run `/rayline start` |
+| `decisions` | Must be `local`; otherwise the turn fails, saying to restart |
+| `routes.url` | Where to send `POST /v1/routes` |
+| `routes.token_file` | The 0600 file holding the bearer token |
+
+The token admits only `POST /v1/routes`. The extension keeps the URL and
+token for the session and looks them up again once after a connection error
+or a `401` (the local process restarted). Any other error fails the turn:
+local decisions never fall back to hosted ARC or to the last model.

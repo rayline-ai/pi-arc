@@ -6,6 +6,7 @@
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
 import { type Config, type Target, targetsOf } from "./config.ts";
+import { type LocalRoutes, NOT_RUNNING, RESTART_HINT, START_HINT } from "./local.ts";
 import { ARC_MODEL, actionIdOf, capacity, executionContext, POLICY, PRESET, replyAllowance, routing } from "./execution.ts";
 import { type RouteRequest, RoutesError, requestRoute, sha256 } from "./routes.ts";
 import { toAnthropic } from "./transcript.ts";
@@ -32,19 +33,71 @@ export interface Stats {
 	encodedTokens: number;
 	elapsedMs: number;
 	fallbacks: number;
+	/** The first lookup's time: it encodes the whole prompt, so it is slower than later ones. */
+	firstMs?: number;
+	/** Turns ARC gave each Pi model (`provider/id`). */
+	models: Record<string, number>;
+	/** Lookups that went to the hosted Routes API. */
+	hosted: number;
 	last?: string;
 }
 
 export interface RouterDeps {
 	apiKey(ctx: ExtensionContext): Promise<string | undefined>;
+	/** With `decisions: "local"`: the local Routes API; `fresh` looks it up again. */
+	localRoutes?(signal?: AbortSignal, fresh?: boolean): Promise<LocalRoutes>;
 	tools(): RouteRequest["tools"];
 	requestRoute?: typeof requestRoute;
+	/** Session totals, kept across routers when the config is reloaded. */
+	stats?: Stats;
 }
+
+export const newStats = (): Stats => ({ lookups: 0, encodedTokens: 0, elapsedMs: 0, fallbacks: 0, models: {}, hosted: 0 });
 
 export function createRouter(config: Config, deps: RouterDeps) {
 	const targets = targetsOf(config);
-	const stats: Stats = { lookups: 0, encodedTokens: 0, elapsedMs: 0, fallbacks: 0 };
+	const stats = deps.stats ?? newStats();
 	const fetchRoute = deps.requestRoute ?? requestRoute;
+	const local = config.decisions === "local";
+	/** The footer text of the last decision, shown again while its model keeps the task. */
+	let decided: string | undefined;
+
+	/** Hosted: Rayline's Routes API with the Rayline key. Local: the local process, looked up again once after a restart. */
+	async function ask(body: RouteRequest, ctx: ExtensionContext, signal?: AbortSignal) {
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (!local) {
+			const apiKey = await deps.apiKey(ctx);
+			if (!apiKey) throw new Error('Rayline: no API key. Set RAYLINE_API_KEY or add "rayline" to auth.json');
+			return fetchRoute(body, { apiKey, sessionId, url: config.url, timeoutMs: config.timeout_ms, signal });
+		}
+		if (!deps.localRoutes) throw new Error("Rayline: local decisions are not available here");
+		let token = "";
+		const once = (routes: LocalRoutes) => {
+			token = routes.token;
+			return fetchRoute(body, { apiKey: routes.token, sessionId, url: routes.url, timeoutMs: config.timeout_ms, signal });
+		};
+		// Errors from the local process are shown in Pi: never with its token in them.
+		const redact = (error: unknown) => {
+			if (token && error instanceof Error && error.message.includes(token)) error.message = error.message.replaceAll(token, "<token>");
+			return error;
+		};
+		try {
+			return await once(await deps.localRoutes(signal));
+		} catch (error) {
+			const restarted = error instanceof TypeError || (error instanceof RoutesError && error.status === 401);
+			if (signal?.aborted) throw error;
+			if (error instanceof DOMException && error.name === "TimeoutError") throw new Error(`Rayline: local ARC did not decide in time. ${START_HINT}`);
+			if (!restarted) throw redact(error);
+			try {
+				return await once(await deps.localRoutes(signal, true));
+			} catch (again) {
+				if (again instanceof TypeError) throw new Error(NOT_RUNNING);
+				if (again instanceof RoutesError && again.status === 401) throw new Error(`Rayline: local ARC refused its token. ${RESTART_HINT}`);
+				if (again instanceof DOMException && again.name === "TimeoutError") throw new Error(`Rayline: local ARC did not decide in time. ${START_HINT}`);
+				throw redact(again);
+			}
+		}
+	}
 
 	const find = (ctx: ExtensionContext, ref: string) => {
 		const slash = ref.indexOf("/");
@@ -79,7 +132,8 @@ export function createRouter(config: Config, deps: RouterDeps) {
 		// Tool follow-ups stay on the model that started the task, and keep its prompt cache.
 		// After compaction (the conversation's start changed), ARC chooses again.
 		if (reason === "continuation" && previous && !rewritten) {
-			status("route: kept");
+			// The footer shows the decision that chose this model, not a retry or error from earlier.
+			if (decided) status(decided);
 			return keep(previous, state);
 		}
 		// A retry stays on the failed model unless its provider is overloaded; then ARC chooses without it.
@@ -94,8 +148,6 @@ export function createRouter(config: Config, deps: RouterDeps) {
 
 		const started = performance.now();
 		try {
-			const apiKey = await deps.apiKey(ctx);
-			if (!apiKey) throw new Error('Rayline: no API key. Set RAYLINE_API_KEY or add "rayline" to auth.json');
 			const system = transcript.system || ctx.getSystemPrompt();
 			const tools = deps.tools();
 			const promptBytes =
@@ -120,7 +172,7 @@ export function createRouter(config: Config, deps: RouterDeps) {
 				targets: offered,
 			});
 
-			const response = await fetchRoute(
+			const response = await ask(
 				{
 					model: ARC_MODEL,
 					max_tokens: 32_000,
@@ -129,13 +181,8 @@ export function createRouter(config: Config, deps: RouterDeps) {
 					tools,
 					routing: routing(targets, execution),
 				},
-				{
-					apiKey,
-					sessionId: ctx.sessionManager.getSessionId(),
-					url: config.url,
-					timeoutMs: config.timeout_ms,
-					signal: request.signal,
-				},
+				ctx,
+				request.signal,
 			);
 			// Like the Rayline CLI, accept a route only if ARC applied this context and the prefer-local policy.
 			const echo = response.routing as { execution?: { status?: string; turn?: { id?: string } }; policy?: { status?: string; preset?: string } } | undefined;
@@ -152,17 +199,24 @@ export function createRouter(config: Config, deps: RouterDeps) {
 
 			const ms = Math.round(performance.now() - started);
 			stats.lookups += 1;
+			if (!local) stats.hosted += 1;
 			stats.encodedTokens += response.usage?.encoded_input_tokens ?? 0;
 			stats.elapsedMs += ms;
+			stats.firstMs ??= ms;
+			stats.models[target.pi] = (stats.models[target.pi] ?? 0) + 1;
 			stats.last = `${response.route_id}: ${target.pi} in ${ms} ms`;
-			status(`route: ${ms} ms`);
+			decided = local ? `route: local · ${target.arc} · ${ms} ms` : `route: ${ms} ms`;
+			status(decided);
 			return { model, thinkingLevel: THINKING, state: { head, ...(response.route_id && { route: response.route_id }) } };
 		} catch (error) {
-			if (request.signal?.aborted || !recoverable(error)) throw error;
+			// Local decisions never fall back: the turn fails and says how to fix it.
+			if (local) status((error as Error).message === NOT_RUNNING ? "route: local, not running" : "route: local, no decision");
+			if (local || request.signal?.aborted || !recoverable(error)) throw error;
 			const routed = fallback(request, ctx, state, error);
 			stats.fallbacks += 1;
 			stats.last = `unavailable: ${routed.model.provider}/${routed.model.id}`;
-			status("route: unavailable");
+			decided = "route: unavailable";
+			status(decided);
 			ctx.ui.notify(`Rayline routing unavailable, using ${routed.model.id}: ${(error as Error).message}`, "warning");
 			return routed;
 		}

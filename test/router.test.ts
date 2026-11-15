@@ -132,3 +132,105 @@ test("an overload re-ask refers to the route it replaces", async () => {
 	const turn = (r.sent[1].routing.execution as { turn: { attempt: number; retry_of: string; reconsult: string } }).turn;
 	assert.deepEqual([turn.attempt, turn.retry_of, turn.reconsult], [2, "rt_1", "veto"]);
 });
+
+/** A router with local decisions; `routes` answers each lookup in turn. */
+function localRouter(answer: (body: RouteRequest, token: string) => RouteResponse, routes: { url: string; token: string }[]) {
+	const sent: { body: RouteRequest; url?: string; token: string }[] = [];
+	const lookups: boolean[] = [];
+	const r = createRouter(
+		{ ...config, decisions: "local" },
+		{
+			apiKey: async () => assert.fail("local decisions need no Rayline key"),
+			localRoutes: async (_signal, fresh = false) => {
+				lookups.push(fresh);
+				return routes[Math.min(lookups.length - 1, routes.length - 1)];
+			},
+			tools: () => [],
+			requestRoute: async (body, options) => {
+				sent.push({ body, url: options.url, token: options.apiKey });
+				return answer(body, options.apiKey);
+			},
+		},
+	);
+	return { ...r, sent, lookups };
+}
+
+test("local decisions ask the local process with its token, not the Rayline key", async () => {
+	const r = localRouter(chose("z-ai/glm-5.3-flash"), [{ url: "http://127.0.0.1:9/v1/routes", token: "tok-1" }]);
+	const result = await r.route(request({}), fakeCtx().ctx);
+	assert.equal(result.model.id, "glm");
+	assert.deepEqual([r.sent[0].url, r.sent[0].token], ["http://127.0.0.1:9/v1/routes", "tok-1"]);
+});
+
+test("after a restart (401 on the old token) local decisions look the process up again", async () => {
+	const r = localRouter(
+		(body, token) => {
+			if (token === "old") throw new RoutesError(401, undefined, "bad token");
+			return chose("z-ai/glm-5.3-flash")(body);
+		},
+		[
+			{ url: "http://127.0.0.1:9/v1/routes", token: "old" },
+			{ url: "http://127.0.0.1:10/v1/routes", token: "new" },
+		],
+	);
+	await r.route(request({}), fakeCtx().ctx);
+	assert.deepEqual(r.lookups, [false, true]);
+	assert.equal(r.sent[1].token, "new");
+});
+
+test("local decisions never fall back: when the local process cannot decide, the turn fails", async () => {
+	const r = localRouter(() => {
+		throw new RoutesError(503, "unavailable", "encoder busy");
+	}, [{ url: "http://127.0.0.1:9/v1/routes", token: "tok" }]);
+	const { ctx, notes } = fakeCtx();
+	await assert.rejects(r.route(request({}), ctx), /503/);
+	assert.equal(r.stats.fallbacks, 0);
+	assert.deepEqual(notes, []);
+});
+
+test("an unreachable local process fails the turn with how to start it", async () => {
+	const r = localRouter(() => {
+		throw new TypeError("fetch failed");
+	}, [{ url: "http://127.0.0.1:9/v1/routes", token: "tok" }]);
+	await assert.rejects(r.route(request({}), fakeCtx().ctx), /\/rayline start/);
+});
+
+test("a local error that echoes the token shows it redacted", async () => {
+	const r = localRouter((_body, token) => {
+		throw new RoutesError(400, "invalid_request", `bad header Bearer ${token}`);
+	}, [{ url: "http://127.0.0.1:9/v1/routes", token: "tok-secret" }]);
+	const error = await r.route(request({}), fakeCtx().ctx).catch((e) => e);
+	assert.doesNotMatch(error.message, /tok-secret/);
+	assert.match(error.message, /<token>/);
+});
+
+test("a tool follow-up after a retry shows the decision again, not the retry", async () => {
+	const statuses: string[] = [];
+	const { ctx } = fakeCtx();
+	(ctx.ui as { setStatus: (key: string, text: string) => void }).setStatus = (_key, text) => statuses.push(text);
+	const r = router(chose("z-ai/glm-5.3-flash"));
+	const first = await r.route(request({}), ctx);
+	const previous = { model: catalog["local/glm"], thinkingLevel: "medium" } as Request["previous"];
+	const failed = { model: catalog["local/glm"], message: { errorMessage: "socket hang up" } } as Request["failed"];
+	await r.route(request({ reason: "retry", failed, state: first.state }), ctx);
+	assert.equal(statuses.at(-1), "route: retry");
+	await r.route(request({ reason: "continuation", previous, state: first.state }), ctx);
+	assert.match(statuses.at(-1)!, /^route: \d+ ms$/);
+});
+
+test("after a hosted fallback, tool follow-ups keep showing that routing was unavailable", async () => {
+	const statuses: string[] = [];
+	const { ctx } = fakeCtx();
+	(ctx.ui as { setStatus: (key: string, text: string) => void }).setStatus = (_key, text) => statuses.push(text);
+	let fail = false;
+	const r = router((body) => {
+		if (fail) throw new RoutesError(503, "unavailable", "try later");
+		return chose("z-ai/glm-5.3-flash")(body);
+	});
+	const first = await r.route(request({}), ctx);
+	fail = true;
+	const previous = { model: catalog["local/glm"], thinkingLevel: "medium" } as Request["previous"];
+	await r.route(request({ previous, state: first.state }), ctx);
+	await r.route(request({ reason: "continuation", previous, state: first.state }), ctx);
+	assert.equal(statuses.at(-1), "route: unavailable");
+});

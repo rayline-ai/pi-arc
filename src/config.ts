@@ -15,10 +15,16 @@ export interface Config {
 	cloud?: Record<string, string>;
 	/** Pi model (`provider/id`) for a turn ARC cannot route before any model has answered. Default: the first local model, else Claude Haiku via Rayline. */
 	fallback?: string;
-	/** Routes API URL. Default `https://api.rayline.ai/v1/routes`. */
+	/** Hosted Routes API URL. Default `https://api.rayline.ai/v1/routes`. Not with `decisions: "local"`. */
 	url?: string;
 	/** Lookup timeout. Default 8000 ms. */
 	timeout_ms?: number;
+	/**
+	 * Where ARC decides. `hosted` (default): Rayline's Routes API, with your Rayline key.
+	 * `local`: the Rayline CLI's local process on this machine (`rayline local start --decisions local`).
+	 * Local decisions never fall back to hosted: when the local process cannot decide, the turn fails.
+	 */
+	decisions?: "hosted" | "local";
 }
 
 export interface Target {
@@ -58,8 +64,15 @@ export function loadConfig(path = configPath()): Config {
 		const missing = (error as NodeJS.ErrnoException).code === "ENOENT" && !process.env[CONFIG_ENV];
 		if (!missing) throw new Error(`Rayline: cannot read ${path} (${(error as Error).message}). See the README for its format.`);
 	}
+	if (config.decisions !== undefined && config.decisions !== "hosted" && config.decisions !== "local") {
+		throw new Error(`Rayline: ${path}: "decisions": ${JSON.stringify(config.decisions)}: must be "hosted" or "local"`);
+	}
+	if (config.decisions === "local" && config.url !== undefined) {
+		throw new Error(`Rayline: ${path}: "url" is the hosted Routes API; with "decisions": "local" the Rayline CLI's local process decides`);
+	}
 	config = {
 		...config,
+		decisions: config.decisions ?? "hosted",
 		cloud: config.cloud ?? DEFAULT_CLOUD,
 		fallback: config.fallback ?? Object.values(config.local ?? {})[0] ?? DEFAULT_FALLBACK,
 	};
