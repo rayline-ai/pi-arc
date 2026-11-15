@@ -3,13 +3,14 @@
 Rayline ARC routing for [Pi](https://pi.dev). Select one model,
 `rayline/arc`. On each turn ARC picks the model: the one you run yourself
 when it can do the job and the conversation fits, otherwise one of the cloud
-models you choose. On an Apple Silicon Mac the routing decisions run locally,
-in the [Rayline CLI](https://github.com/rayline-ai/rayline-cli)'s local
-process. Pi runs the turn itself, so the footer, `/session` costs and context
+models you choose. On an Apple Silicon Mac, when you choose local decisions
+in `/rayline setup`, the routing decisions run locally, in the
+[Rayline CLI](https://github.com/rayline-ai/rayline-cli)'s local process.
+Pi runs the turn itself, so the footer, `/session` costs and context
 limits show the model that really answered.
 
 ```
-you ──▶ Pi ──route()──▶ ARC on your Mac ──▶ "your local GLM" or "a cloud model you chose"
+you ──▶ Pi ──route()──▶ ARC (on your Mac) ──▶ "your local GLM" or "a cloud model you chose"
          │
          ├──▶ local model   (your server)
          └──▶ cloud model   (through Rayline with your Rayline key, or your own provider key)
@@ -23,14 +24,24 @@ Requires Pi 1.1.0 or later. Install the extension:
 pi install git:github.com/rayline-ai/pi-arc
 ```
 
+Cloud turns through Rayline use your Rayline API key
+([create one](https://docs.rayline.ai/platform/api-keys)), and Pi lists
+`arc` only once the key is set. Run `/login rayline` in Pi, set
+`RAYLINE_API_KEY`, or add it to Pi's `~/.pi/agent/auth.json` (a `!command`
+keeps it off disk):
+
+```json
+{ "rayline": { "type": "api_key", "key": "!op read op://Private/Rayline/credential" } }
+```
+
 Then in Pi:
 
 ```
 /rayline setup
 ```
 
-and choose local decisions. Setup checks the Rayline CLI 0.5.2 or later (and
-shows the install command if it is missing), signs you in with
+and choose local decisions (Rayline CLI 0.5.2 or later). Setup checks that the
+Rayline CLI is installed (and shows the install command if it is missing), signs you in with
 `rayline auth login`, starts the local process
 (`rayline local start --decisions local`; the first start downloads about
 1 GB, once), and saves `"decisions": "local"` in `~/.pi/agent/rayline.json`.
@@ -38,15 +49,6 @@ shows the install command if it is missing), signs you in with
 Then pick the model: run `/model`, choose `arc`, and press Ctrl+S to keep it
 as the default. (`/model rayline/arc` also works, but only for the current
 session; `/new` goes back to your default.)
-
-Cloud turns through Rayline use your Rayline API key
-([create one](https://docs.rayline.ai/platform/api-keys)): set
-`RAYLINE_API_KEY`, or add it to Pi's `~/.pi/agent/auth.json` (a `!command`
-keeps it off disk):
-
-```json
-{ "rayline": { "type": "api_key", "key": "!op read op://Private/Rayline/credential" } }
-```
 
 By default ARC routes between your local models (below) and Claude Opus 5.5,
 Claude Haiku 5.5 and GPT-6 Luna, all run through Rayline. Choose your own
@@ -72,10 +74,10 @@ billed as usual.
 Serve it with any OpenAI-compatible server (vLLM, llama.cpp, ...) and add it
 to `~/.pi/agent/models.json` as usual. Its `contextWindow` there is what ARC
 checks the prompt against. Then map its ARC model ID to the Pi model in
-`~/.pi/agent/rayline.json`:
+`~/.pi/agent/rayline.json` (keep the `decisions` setup saved):
 
 ```json
-{ "decisions": "local", "local": { "z-ai/glm-5.3-flash": "local/glm-5.3-flash" } }
+{ "local": { "z-ai/glm-5.3-flash": "local/glm-5.3-flash" } }
 ```
 
 ARC now prefers the local model when it can do the job and the conversation
@@ -136,14 +138,16 @@ With hosted decisions, each lookup sends the conversation, system prompt and
 active tool schemas to Rayline; with local decisions, lookups stay on this
 machine. A local turn runs on your server; a `rayline/` cloud turn runs
 through Rayline and is billed there (Pi shows it at $0); other cloud turns go
-from Pi to your provider. Lookups are billed per token ARC reads, take about
-1–2 s, and are limited to 30 per minute per account. See
+from Pi to your provider. Local decisions are not metered. Hosted lookups
+are billed per token ARC reads, take about 1–2 s, and are limited to 30 per
+minute per account. See
 [data and privacy](https://docs.rayline.ai/platform/data-privacy).
 
 ## Limits
 
-- ARC reads the whole conversation on every lookup, so lookups cost more as a
-  session grows.
+- ARC reads the whole conversation on every lookup, so hosted lookups cost
+  more as a session grows, and the first local decision of a session is
+  slower than the rest.
 - ARC is offered each model with its default reasoning and no per-turn
   steering, but Pi runs every turn at its `medium` thinking level.
 - Models run through Rayline are declared to Pi with a 200k context window,
