@@ -52,7 +52,7 @@ export async function setup(ui: SetupUI, deps: SetupDeps): Promise<void> {
 		ui.notify(
 			[
 				`Saved "decisions": "hosted" in ${shown(deps.path)}.`,
-				"Add your Rayline key with /login rayline (or set RAYLINE_API_KEY), then pick the model: /model rayline/arc",
+				"Add your Rayline key with /login rayline (or set RAYLINE_API_KEY), then pick the model: /model, choose arc, Ctrl+S to keep it as the default",
 			].join("\n"),
 			"info",
 		);
@@ -125,5 +125,5 @@ export async function setup(ui: SetupUI, deps: SetupDeps): Promise<void> {
 	saveDecisions(deps.path, "local");
 	deps.reload();
 	ui.setStatus("rayline", "route: local, ready");
-	ui.notify([...done, `Saved "decisions": "local" in ${shown(deps.path)}.`, "Pick the model: /model rayline/arc"].join("\n"), "info");
+	ui.notify([...done, `Saved "decisions": "local" in ${shown(deps.path)}.`, "Pick the model: /model, choose arc, Ctrl+S to keep it as the default"].join("\n"), "info");
 }

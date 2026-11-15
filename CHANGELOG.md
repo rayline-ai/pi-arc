@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- README: the quick start is `/rayline setup` inside Pi with local decisions; hosted decisions have their own section. Setup's last line says to pick `arc` in `/model` and press Ctrl+S, so it stays the default after `/new`.
 - `"decisions": "local"` in `rayline.json`: ARC decides on this machine, in the Rayline CLI's local process (0.5.2 or later), found with `rayline local status --json`. No fallback to hosted ARC: a turn the local process cannot decide fails. The footer shows `route: local · <model> · <ms>`.
 - `/rayline setup` chooses local or hosted decisions; for local it checks the Rayline CLI, signs in, starts the local process and saves `decisions`. `/rayline start` and `/rayline stop` start and stop the local process.
 - `/rayline` shows the first decision's time apart from later ones, the models that took the turns, and, with local decisions, that no decision was hosted.
