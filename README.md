@@ -177,3 +177,7 @@ pi -e . --model rayline/arc
 ## License
 
 MIT
+
+## Contributing
+
+Open a pull request against `main`. It needs passing `test (node 22)` and `test (node 24)` checks and a review before it merges.
